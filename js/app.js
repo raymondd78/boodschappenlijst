@@ -4,7 +4,7 @@ import { createSupabaseApi } from './api-supabase.js';
 import { createDemoApi } from './api-demo.js';
 import { sortByStore, groupByCategory, effectivePosition, learnPositions } from './order.js';
 
-const VERSION = '1.0.1';
+const VERSION = '1.1.0';
 const $app = document.getElementById('app');
 const $sheet = document.getElementById('sheet-root');
 const $toast = document.getElementById('toast-root');
@@ -16,6 +16,10 @@ const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/\p{D
 const plural = (n, one, more) => `${n} ${n === 1 ? one : more}`;
 const tmpId = () => 'tmp-' + Math.random().toString(36).slice(2);
 const nowIso = () => new Date().toISOString();
+const qtyOf = (e) => Math.max(1, Number(e?.qty) || 1);
+/** Duidelijk aantal achter de naam, alleen bij 2 of meer */
+const qtyBadge = (e) => (qtyOf(e) > 1 ? ` <span class="qty-badge">${qtyOf(e)}×</span>` : '');
+const MAX_QTY = 99;
 
 const prefs = {
   get(k, d) { try { const v = localStorage.getItem('bl-pref-' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -25,6 +29,7 @@ const prefs = {
 const ICON = {
   list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/></svg>',
   cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2.2l2.3 11h10.3l2-8H6.3"/><circle cx="9.5" cy="19.5" r="1.4"/><circle cx="16.5" cy="19.5" r="1.4"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg>',
 };
 
@@ -292,7 +297,11 @@ function entryRow(e, showCategory) {
       ${e.note ? `<span class="note">${esc(e.note)}</span>` : ''}
       ${cat ? `<span class="meta">${esc(cat)}</span>` : ''}
     </button>
-    <button class="icon-btn" data-action="remove-entry" data-id="${e.id}" aria-label="${esc(it.name)} van de lijst halen">×</button>
+    <div class="stepper" role="group" aria-label="Aantal ${esc(it.name)}">
+      <button class="step" data-action="qty-down" data-id="${e.id}" aria-label="${qtyOf(e) > 1 ? 'Eén minder' : esc(it.name) + ' van de lijst halen'}">${qtyOf(e) > 1 ? '−' : ICON.trash}</button>
+      <span class="qty" aria-live="polite">${qtyOf(e)}</span>
+      <button class="step plus" data-action="qty-up" data-id="${e.id}" aria-label="Eén meer" ${qtyOf(e) >= MAX_QTY ? 'disabled' : ''}>+</button>
+    </div>
   </div>`;
 }
 
@@ -313,12 +322,13 @@ function viewSuggest() {
   const q = S.search.trim();
   if (!q) {
     const fav = S.data.items
-      .filter((it) => !S.data.entryByItem.has(it.id) && it.use_count > 0)
+      .filter((it) => !S.data.entryByItem.get(it.id)?.in_cart && it.use_count > 0)
       .sort((a, b) => b.use_count - a.use_count || String(b.last_used).localeCompare(String(a.last_used)) || a.name.localeCompare(b.name, 'nl'))
       .slice(0, S.showMoreFav ? 40 : 12);
     if (!fav.length) return '';
     return `<div class="section-title">Vaak gekozen</div><div class="chips">${fav.map((it) =>
-      `<button class="chip add" data-action="add-item" data-id="${it.id}">${esc(it.name)}</button>`).join('')}
+      { const e = S.data.entryByItem.get(it.id);
+        return `<button class="chip add${e ? ' on' : ''}" data-action="add-item" data-id="${it.id}">${esc(it.name)}${e ? ` <span class="chip-qty">${qtyOf(e)}</span>` : ''}</button>`; }).join('')}
       <button class="chip more" data-action="more-fav">${S.showMoreFav ? 'Minder' : 'Meer…'}</button></div>`;
   }
   const matches = searchMatches(q).slice(0, 8);
@@ -328,7 +338,7 @@ function viewSuggest() {
     const cat = it.category_id ? S.data.catsById.get(it.category_id)?.name : '';
     return `<div class="row"><button class="main" data-action="add-item" data-id="${it.id}">
       <span class="name">${esc(it.name)}</span><span class="meta">${esc(cat || '')}</span></button>
-      ${e ? `<span class="on-list">${e.in_cart ? 'in de kar' : 'op de lijst'}</span>` : ''}</div>`;
+      ${e ? `<span class="on-list">${e.in_cart ? 'in de kar' : `${qtyOf(e)}× op de lijst`}</span>` : ''}</div>`;
   }).join('')}
     ${exact ? '' : `<div class="row"><button class="main" data-action="new-item"><span class="name">+ Nieuw artikel “${esc(q)}”</span></button></div>`}
   </div>`;
@@ -345,7 +355,7 @@ function viewShop() {
     const cat = it.category_id ? S.data.catsById.get(it.category_id)?.name : '';
     return `<div class="row" data-entry="${e.id}"><button class="main" data-action="to-cart" data-id="${e.id}" style="display:flex;align-items:center;gap:6px">
       <span class="tick" aria-hidden="true"></span>
-      <span><span class="name">${esc(it.name)}</span>${e.note ? `<span class="note">${esc(e.note)}</span>` : ''}<span class="meta">${esc(cat || '')}</span></span>
+      <span><span class="name">${esc(it.name)}</span>${qtyBadge(e)}${e.note ? `<span class="note">${esc(e.note)}</span>` : ''}<span class="meta">${esc(cat || '')}</span></span>
     </button></div>`;
   }).join('');
   return `${topbar('Winkelen')}
@@ -525,17 +535,17 @@ function toast(text, { undo, error } = {}) {
 
 // ---------- Acties ----------
 
-function addToList(item, note = null) {
+function addToList(item, note = null, qty = 1) {
   const existing = S.data.entryByItem.get(item.id);
   if (existing) {
     if (existing.in_cart) return fromCart(existing);
-    render();
-    return toast(`${item.name} staat al op de lijst`);
+    changeQty(existing, +1);
+    return toast(`${item.name}: ${qtyOf(existing)}× op de lijst`);
   }
-  const temp = { id: tmpId(), family_id: familyId(), item_id: item.id, note, in_cart: false, cart_at: null, cart_store_id: null, added_at: nowIso() };
+  const temp = { id: tmpId(), family_id: familyId(), item_id: item.id, note, qty, in_cart: false, cart_at: null, cart_store_id: null, added_at: nowIso() };
   mutate(() => S.data.entries.push(temp), async () => {
-    const row = await S.api.insert('list_entries', { family_id: familyId(), item_id: item.id, note });
-    Object.assign(temp, row);
+    const row = await S.api.insert('list_entries', { family_id: familyId(), item_id: item.id, note, ...(qty > 1 ? { qty } : {}) });
+    await syncInserted(temp, row);
   }, 'Toevoegen mislukt');
 }
 
@@ -547,7 +557,7 @@ function newItemSheet(name) {
     <label class="lbl">Categorie</label>
     ${categoryChips(overig?.id)}
     <label class="lbl" for="ni-note">Notitie (optioneel)</label>
-    <input id="ni-note" class="field" maxlength="120" placeholder="Bijv. 2 stuks">
+    <input id="ni-note" class="field" maxlength="120" placeholder="Bijv. de grote">
     <div class="actions"><button class="btn" data-action="close">Annuleren</button>
     <button class="btn primary" data-action="save" data-default>Op de lijst</button></div>`, {
     'pick-cat': pickCat,
@@ -561,13 +571,13 @@ function newItemSheet(name) {
       if (dup) return addToList(dup, note);
       const catId = pickedCat();
       const item = { id: tmpId(), family_id: familyId(), name: nm, category_id: catId, use_count: 0, last_used: null };
-      const entry = { id: tmpId(), family_id: familyId(), item_id: item.id, note, in_cart: false, cart_at: null, cart_store_id: null, added_at: nowIso() };
+      const entry = { id: tmpId(), family_id: familyId(), item_id: item.id, note, qty: 1, in_cart: false, cart_at: null, cart_store_id: null, added_at: nowIso() };
       mutate(() => { S.data.items.push(item); S.data.entries.push(entry); }, async () => {
         const row = await S.api.insert('items', { family_id: familyId(), name: nm, category_id: catId });
         Object.assign(item, row);
         entry.item_id = row.id;
         const e = await S.api.insert('list_entries', { family_id: familyId(), item_id: row.id, note });
-        Object.assign(entry, e);
+        await syncInserted(entry, e);
       }, 'Artikel toevoegen mislukt');
     },
   });
@@ -577,7 +587,7 @@ function editEntrySheet(entry) {
   const it = S.data.itemsById.get(entry.item_id);
   openSheet(`<h2>${esc(it.name)}</h2>
     <label class="lbl" for="ee-note">Notitie</label>
-    <input id="ee-note" class="field" maxlength="120" value="${esc(entry.note || '')}" placeholder="Bijv. 2 stuks, de grote">
+    <input id="ee-note" class="field" maxlength="120" value="${esc(entry.note || '')}" placeholder="Bijv. de grote, rijpe">
     <label class="lbl">Categorie</label>
     ${categoryChips(it.category_id)}
     <div class="actions"><button class="btn danger" data-action="remove">Van lijst halen</button>
@@ -598,12 +608,33 @@ function editEntrySheet(entry) {
   });
 }
 
+/** Aantal ophogen of verlagen; bij 1 en − gaat het artikel van de lijst. */
+function changeQty(entry, delta) {
+  const qty = qtyOf(entry) + delta;
+  if (qty < 1) return removeEntry(entry);
+  if (qty > MAX_QTY) return;
+  // Nog niet opgeslagen? Dan neemt syncInserted het aantal mee na het invoegen.
+  mutate(() => { entry.qty = qty; }, async () => {
+    if (!String(entry.id).startsWith('tmp-')) await S.api.update('list_entries', entry.id, { qty });
+  }, 'Aantal opslaan mislukt');
+}
+
+/** Na invoegen: databaserij overnemen, maar een intussen aangepast aantal bewaren. */
+async function syncInserted(entry, row) {
+  const want = qtyOf(entry);
+  Object.assign(entry, row);
+  if (qtyOf(row) !== want) {
+    entry.qty = want;
+    await S.api.update('list_entries', entry.id, { qty: want });
+  }
+}
+
 function removeEntry(entry) {
   const it = S.data.itemsById.get(entry.item_id);
   const idx = S.data.entries.indexOf(entry);
   mutate(() => S.data.entries.splice(idx, 1), () => S.api.remove('list_entries', entry.id), 'Verwijderen mislukt');
   toast(`${it.name} van de lijst gehaald`, {
-    undo: () => addToList(it, entry.note),
+    undo: () => addToList(it, entry.note, qtyOf(entry)),
   });
 }
 
@@ -628,7 +659,7 @@ function cartSheet() {
     <p class="muted small">Tik op ↩ om een artikel terug op de lijst te zetten.</p>
     ${cart.length ? `<div class="card">${cart.map((e) => {
       const it = S.data.itemsById.get(e.item_id);
-      return `<div class="row"><div class="main"><span class="name">${esc(it.name)}</span>${e.note ? `<span class="note">${esc(e.note)}</span>` : ''}</div>
+      return `<div class="row"><div class="main"><span class="name">${esc(it.name)}</span>${qtyBadge(e)}${e.note ? `<span class="note">${esc(e.note)}</span>` : ''}</div>
         <button class="icon-btn" data-action="back" data-id="${e.id}" aria-label="${esc(it.name)} terug op de lijst">↩</button></div>`;
     }).join('')}</div>` : '<div class="empty">De kar is leeg.</div>'}
     <div class="actions"><button class="btn" data-action="close">Sluiten</button>
@@ -883,6 +914,8 @@ const actions = {
   'rename-category': (el) => { const c = S.data.catsById.get(el.dataset.id); if (c) renameRow('categories', c, 'Categorie hernoemen'); },
   'move-category': (el) => { const c = S.data.catsById.get(el.dataset.id); if (c) moveCategory(c, Number(el.dataset.dir)); },
   'delete-category': (el) => { const c = S.data.catsById.get(el.dataset.id); if (c) deleteCategory(c); },
+  'qty-up': (el) => { const e = S.data.entries.find((x) => x.id === el.dataset.id); if (e) changeQty(e, +1); },
+  'qty-down': (el) => { const e = S.data.entries.find((x) => x.id === el.dataset.id); if (e) changeQty(e, -1); },
   'edit-item': (el) => { const it = S.data.itemsById.get(el.dataset.id); if (it) editItemSheet(it); },
 };
 

@@ -92,7 +92,7 @@ export function createDemoApi() {
         stores: mine('stores').sort((a, b) => a.position - b.position),
         items: mine('items'),
         positions: mine('item_positions'),
-        entries: mine('list_entries').sort((a, b) => a.added_at.localeCompare(b.added_at)),
+        entries: mine('list_entries').map((e) => ({ qty: 1, ...e })).sort((a, b) => a.added_at.localeCompare(b.added_at)),
       };
     },
 
@@ -101,7 +101,7 @@ export function createDemoApi() {
       if (table === 'list_entries' && mine('list_entries').some((e) => e.item_id === row.item_id)) fail('Staat al op de lijst');
       const full = { id: uid(), family_id: fam(), ...row };
       if (table === 'items') Object.assign(full, { use_count: 0, last_used: null, created_at: now(), ...row });
-      if (table === 'list_entries') Object.assign(full, { note: null, in_cart: false, cart_at: null, cart_store_id: null, added_at: now(), ...row });
+      if (table === 'list_entries') Object.assign(full, { note: null, qty: 1, in_cart: false, cart_at: null, cart_store_id: null, added_at: now(), ...row });
       db[table].push(full);
       save();
       return full;

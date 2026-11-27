@@ -41,7 +41,9 @@ await shot('03-lijst-leeg');
 
 // 3. Toevoegen via chips, zoeken en nieuw artikel
 await click('.chip.add'); // Soja yoghurt (meest gekocht)
-await click('.chip.add');
+await click('.chip.add'); // zelfde chip nog eens: aantal 2 (Magere kwark)
+assert((await page.$eval('.chip.add', (e) => e.textContent)).includes('2'), 'chip toont aantal 2');
+await click('.chip.add:not(.on)');
 await page.type('#add-input', 'banan');
 await sleep(100);
 assert((await text('#suggest')).includes('Bananen'), 'zoeken vindt Bananen');
@@ -68,8 +70,18 @@ await click('[data-action="save"]');
 await sleep(300);
 const listText = await text('.content');
 assert(listText.includes('Wc-reiniger') && listText.includes('2 stuks'), 'nieuw artikel met notitie op lijst');
-assert(/5 artikelen/i.test(listText), '5 artikelen (kwark stond er al)');
+assert(/5 artikelen/i.test(listText), '5 artikelen (kwark stond er al → aantal 3)');
 await shot('06-lijst-categorie');
+
+// 3b. Aantal met + en −
+const qtyFirst = () => page.$eval('.stepper .qty', (e) => e.textContent);
+await click('[data-action="qty-up"]');
+assert((await qtyFirst()) === '2', '+ verhoogt aantal');
+await click('[data-action="qty-down"]');
+assert((await qtyFirst()) === '1', '− verlaagt aantal');
+await click('[data-action="qty-up"]'); await click('[data-action="qty-up"]');
+assert((await qtyFirst()) === '3', 'aantal 3');
+await shot('06b-aantal');
 
 // 4. Notitie wijzigen
 const rows = await page.$$('[data-action="edit-entry"]');
@@ -88,6 +100,8 @@ await shot('08-lijst-winkelvolgorde');
 // 6. Winkelen: afvinken in afwijkende volgorde
 await click('.nav [data-tab="winkelen"]');
 await shot('09-winkelen');
+const badges = await page.$$eval('.shop .qty-badge', (els) => els.map((e) => e.textContent));
+assert(JSON.stringify(badges.sort()) === '["3×","3×"]', 'aantal (3×) zichtbaar in winkel, niets bij 1');
 const order = await page.$$eval('.shop .row .name', (els) => els.map((e) => e.textContent));
 console.log('   volgorde vóór:', order.join(' | '));
 // vink de laatste eerst af, dan de rest van boven naar beneden

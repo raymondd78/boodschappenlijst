@@ -69,12 +69,15 @@ create table if not exists public.list_entries (
   family_id     uuid not null references public.families(id) on delete cascade,
   item_id       uuid not null references public.items(id) on delete cascade,
   note          text check (note is null or char_length(note) <= 120),
+  qty           integer not null default 1 check (qty between 1 and 99),
   in_cart       boolean not null default false,
   cart_at       timestamptz,
   cart_store_id uuid references public.stores(id) on delete set null,
   added_at      timestamptz not null default now(),
   unique (family_id, item_id)
 );
+-- Aantal (versie 1.1): ook voor bestaande databases
+alter table public.list_entries add column if not exists qty integer not null default 1 check (qty between 1 and 99);
 
 -- Sjablonen voor nieuwe gezinnen (niet via de API leesbaar)
 create table if not exists public.tpl_categories (name text primary key, position integer not null);

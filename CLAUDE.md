@@ -19,6 +19,7 @@ Communicatie, UI-teksten en documentatie in het Nederlands.
 - `js/api-supabase.js` en `js/api-demo.js` hebben dezelfde interface; de UI (`js/app.js`) weet niet welke actief is.
 - Wijzigingen: optimistisch lokaal (`mutate`), daarna database; realtime-berichten triggeren een volledige herlaad (`refresh`). Verouderde herlaadresultaten worden genegeerd (`writeSeq`).
 - Looproute: `item_positions` per winkel; zonder geleerde positie `categorie.position * 1000 + 500`. Leren in `js/order.js` (`learnPositions`, langste stijgende deelrij).
+- Aantal per lijstregel: `list_entries.qty` (1–99). Lijst: − / + stepper (− bij 1 = verwijderen), opnieuw toevoegen = +1. Winkel en kar: `N×` achter de naam alleen bij ≥ 2; afvinken = hele aantal. Migraties voor bestaande databases in `supabase/migraties/`.
 - Startdata: `tools/build_seed.py` → `supabase/seed.sql`, `supabase/setup.sql`, `js/seed.js`.
 
 ## Na elke wijziging

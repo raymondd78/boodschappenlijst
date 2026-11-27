@@ -1,7 +1,7 @@
 // Service worker: app-bestanden in de cache, zodat de app snel start en
 // installeerbaar is. Data van Supabase gaat altijd rechtstreeks over het netwerk.
 // Verhoog CACHE bij elke nieuwe versie zodat telefoons de update ophalen.
-const CACHE = 'boodschappen-v1.0.1';
+const CACHE = 'boodschappen-v1.1.0';
 const FILES = [
   './',
   'index.html',

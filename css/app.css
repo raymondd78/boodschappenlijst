@@ -197,3 +197,24 @@ label.lbl { display: block; font-size: 14px; color: var(--muted); margin: 12px 2
 
 .banner { margin: 0 12px 10px; padding: 10px 14px; border-radius: 12px; background: #fff3dc; color: #5c3d07; font-size: 14px; }
 @media (prefers-color-scheme: dark) { .banner { background: #3a2e17; color: #f3dca8; } }
+
+/* ---------- Aantal (versie 1.1) ---------- */
+.stepper { display: flex; align-items: center; flex: none; gap: 2px; }
+.stepper .step {
+  width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--card);
+  font-size: 24px; font-weight: 700; line-height: 1; color: var(--brand); display: grid; place-items: center; padding: 0;
+}
+.stepper .step.plus { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.stepper .step:active { transform: scale(.92); }
+.stepper .step:disabled { opacity: .4; }
+.stepper .qty { min-width: 28px; text-align: center; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.qty-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 10px; border-radius: 999px;
+  background: var(--brand); color: var(--brand-ink); font-weight: 800; font-size: 1em; vertical-align: 1px;
+}
+.row .name:has(+ .qty-badge) { display: inline; }
+.chip.on { border-color: var(--brand); background: var(--brand-soft); }
+.chip-qty {
+  display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-left: 4px; padding: 0 5px;
+  border-radius: 999px; background: var(--brand); color: var(--brand-ink); font-size: 13px; font-weight: 700;
+}

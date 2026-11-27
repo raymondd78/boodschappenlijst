@@ -58,8 +58,8 @@ Open de link in Chrome → menu **⋮ → App installeren** (of *Toevoegen aan s
 
 | Scherm | Wat je doet |
 |---|---|
-| **Lijst** | Typ een deel van de naam en druk op Enter (pakt de beste match), of tik op een suggestie. Bestaat het artikel nog niet, kies dan *+ Nieuw artikel* en een categorie. Tik op een artikel voor notitie en categorie; × haalt het van de lijst. |
-| **Winkelen** | Kies de winkel. Tik een artikel aan → in de kar. *Kar* toont wat je al hebt (↩ zet terug). *Klaar* leegt de kar en onthoudt de volgorde. |
+| **Lijst** | Typ een deel van de naam en druk op Enter (pakt de beste match), of tik op een suggestie. Bestaat het artikel nog niet, kies dan *+ Nieuw artikel* en een categorie. Met **−** en **+** pas je het aantal aan; nog een tik op een vaak gekozen artikel telt er één bij. **−** bij aantal 1 (prullenbakje) haalt het van de lijst. Tik op de naam voor notitie en categorie. |
+| **Winkelen** | Kies de winkel. Bij 2 of meer staat het aantal (bijv. **3×**) achter de naam. Tik een artikel aan → het hele aantal gaat in de kar. *Kar* toont wat je al hebt (↩ zet terug). *Klaar* leegt de kar en onthoudt de volgorde. |
 | **Beheer** | Gezinscode en leden (goedkeuren, weigeren, verwijderen), winkels (toevoegen, hernoemen, geleerde volgorde wissen ↺), categorieën (volgorde = standaardroute, ↑↓), artikelen zoeken en wijzigen. |
 
 Iedereen in het gezin mag leden verwijderen en winkels/categorieën/artikelen beheren; alleen de starter keurt nieuwe leden goed. Vertrekt de starter, dan gaat die rol naar het langst aanwezige lid.
@@ -86,6 +86,16 @@ Is `js/config.js` nog leeg, dan biedt de app een demo aan. Alles werkt dan, maar
 - **Geen pushmeldingen**: wachtende leden zie je aan de badge in de app.
 
 ## Nieuwe versie uitrollen
+
+### Database bijwerken (bestaande installatie)
+
+Nieuwe installaties gebruiken gewoon `supabase/setup.sql`. Heb je de database al, voer dan de losse scripts uit [`supabase/migraties/`](supabase/migraties/) één keer uit in de SQL Editor (elk script is veilig om opnieuw te draaien):
+
+| Versie | Script | Wat |
+|---|---|---|
+| 1.1 | `2026-11-27_aantal.sql` | Aantal per artikel op de lijst |
+
+### App
 
 Verhoog bij elke wijziging `CACHE` in [`sw.js`](sw.js) en `VERSION` in [`js/app.js`](js/app.js), anders blijven telefoons de oude versie uit de cache tonen.
 
