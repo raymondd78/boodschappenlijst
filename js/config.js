@@ -4,5 +4,5 @@
 // de beveiliging zit in de Row Level Security van de database.
 // Leeg laten = de app start in demomodus (alles alleen in deze browser).
 
-export const SUPABASE_URL = '';
-export const SUPABASE_ANON_KEY = '';
+export const SUPABASE_URL = 'https://klaytuxturjkiebvqhhk.supabase.co';
+export const SUPABASE_ANON_KEY = 'sb_publishable_UUJdkRvEQiZcZmMSfOdShA_IB1sdcMJ';

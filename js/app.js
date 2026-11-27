@@ -4,7 +4,7 @@ import { createSupabaseApi } from './api-supabase.js';
 import { createDemoApi } from './api-demo.js';
 import { sortByStore, groupByCategory, effectivePosition, learnPositions } from './order.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const $app = document.getElementById('app');
 const $sheet = document.getElementById('sheet-root');
 const $toast = document.getElementById('toast-root');
