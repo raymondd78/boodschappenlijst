@@ -1,0 +1,17 @@
+{
+  "name": "boodschappenlijst",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Gedeelde boodschappenlijst voor het gezin (PWA + Supabase)",
+  "scripts": {
+    "test": "node tests/test_order.mjs",
+    "test:sql": "tests/run_sql_tests.sh",
+    "test:ui": "node tests/ui_test.mjs",
+    "seed": "python3 tools/build_seed.py",
+    "serve": "python3 -m http.server 8765"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}
