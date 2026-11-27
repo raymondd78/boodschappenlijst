@@ -277,6 +277,16 @@ end $$;
 revoke all on public.tpl_categories, public.tpl_stores, public.tpl_items from anon, authenticated;
 revoke insert, update on public.families, public.members from anon, authenticated;
 
+-- Tabelrechten voor ingelogde gebruikers. Nieuwere Supabase-projecten zetten tabellen in
+-- public niet meer automatisch open; zonder deze regels geeft Postgres "permission denied"
+-- nog vóór de RLS-regels aan de beurt komen. RLS bepaalt daarna welke rijen zichtbaar zijn.
+grant usage on schema public to authenticated;
+grant select on public.families to authenticated;
+grant select, delete on public.members to authenticated;
+grant select, insert, update, delete
+  on public.categories, public.stores, public.items, public.item_positions, public.list_entries
+  to authenticated;
+
 revoke execute on function public.create_family(text)            from public, anon;
 revoke execute on function public.join_family(text, text)        from public, anon;
 revoke execute on function public.approve_member(uuid)           from public, anon;

@@ -7,5 +7,6 @@ create function auth.uid() returns uuid language sql stable as $$
 $$;
 grant usage on schema auth to anon, authenticated;
 grant usage on schema public to anon, authenticated;
-alter default privileges in schema public grant all on tables to anon, authenticated;
+-- Geen default privileges: nieuwere Supabase-projecten geven tabellen niet meer automatisch vrij,
+-- dus setup.sql moet de tabelrechten zelf geven.
 create publication supabase_realtime;
