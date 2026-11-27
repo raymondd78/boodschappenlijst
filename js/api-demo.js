@@ -7,11 +7,18 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) 
 const now = () => new Date().toISOString();
 
 function load() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch { return null; }
+  let db;
+  try { db = JSON.parse(localStorage.getItem(KEY)) || null; } catch { return null; }
+  if (db && !db.lists) {
+    // Demo van vóór versie 1.2: alles naar één lijst "Boodschappenlijst" per gezin
+    db.lists = db.families.map((f) => ({ id: uid(), family_id: f.id, name: 'Boodschappenlijst', created_at: f.created_at || now() }));
+    db.list_entries.forEach((e) => { e.list_id = db.lists.find((l) => l.family_id === e.family_id)?.id; });
+  }
+  return db;
 }
 
 export function createDemoApi() {
-  let db = load() || { me: uid(), families: [], members: [], categories: [], stores: [], items: [], item_positions: [], list_entries: [] };
+  let db = load() || { me: uid(), families: [], members: [], categories: [], stores: [], lists: [], items: [], item_positions: [], list_entries: [] };
   const listeners = new Set();
   const save = () => {
     localStorage.setItem(KEY, JSON.stringify(db));
@@ -44,6 +51,7 @@ export function createDemoApi() {
       const f = { id: uid(), code, created_at: now() };
       db.families.push(f);
       db.members.push({ family_id: f.id, user_id: db.me, name, status: 'approved', is_starter: true, created_at: now() });
+      db.lists.push({ id: uid(), family_id: f.id, name: 'Boodschappenlijst', created_at: now() });
       // Demo: een wachtend gezinslid, zodat goedkeuren te proberen is
       db.members.push({ family_id: f.id, user_id: uid(), name: 'Sanne (demo)', status: 'pending', is_starter: false, created_at: now() });
       const catIds = new Map();
@@ -78,7 +86,7 @@ export function createDemoApi() {
       if (!rest.length) {
         const id = m.family_id;
         for (const t of ['families']) db[t] = db[t].filter((r) => r.id !== id);
-        for (const t of ['members', 'categories', 'stores', 'items', 'item_positions', 'list_entries']) db[t] = db[t].filter((r) => r.family_id !== id);
+        for (const t of ['members', 'categories', 'stores', 'lists', 'items', 'item_positions', 'list_entries']) db[t] = db[t].filter((r) => r.family_id !== id);
       } else if (m.is_starter) {
         rest.sort((a, b) => a.created_at.localeCompare(b.created_at))[0].is_starter = true;
       }
@@ -90,6 +98,7 @@ export function createDemoApi() {
         members: mine('members'),
         categories: mine('categories').sort((a, b) => a.position - b.position),
         stores: mine('stores').sort((a, b) => a.position - b.position),
+        lists: mine('lists').sort((a, b) => a.created_at.localeCompare(b.created_at)),
         items: mine('items'),
         positions: mine('item_positions'),
         entries: mine('list_entries').map((e) => ({ qty: 1, ...e })).sort((a, b) => a.added_at.localeCompare(b.added_at)),
@@ -98,9 +107,11 @@ export function createDemoApi() {
 
     async insert(table, row) {
       if (table === 'items' && mine('items').some((i) => i.name.toLowerCase() === row.name.toLowerCase())) fail('Dat artikel bestaat al');
-      if (table === 'list_entries' && mine('list_entries').some((e) => e.item_id === row.item_id)) fail('Staat al op de lijst');
+      if (table === 'list_entries' && mine('list_entries').some((e) => e.list_id === row.list_id && e.item_id === row.item_id)) fail('Staat al op de lijst');
+      if (table === 'lists' && mine('lists').some((l) => l.name.toLowerCase() === row.name.toLowerCase())) fail('Er is al een lijst met die naam');
       const full = { id: uid(), family_id: fam(), ...row };
       if (table === 'items') Object.assign(full, { use_count: 0, last_used: null, created_at: now(), ...row });
+      if (table === 'lists') Object.assign(full, { created_at: now(), ...row });
       if (table === 'list_entries') Object.assign(full, { note: null, qty: 1, in_cart: false, cart_at: null, cart_store_id: null, added_at: now(), ...row });
       db[table].push(full);
       save();
@@ -110,6 +121,7 @@ export function createDemoApi() {
     async update(table, id, patch) {
       const r = db[table].find((x) => x.id === id && x.family_id === fam());
       if (!r) return;
+      if (table === 'lists' && patch.name && mine('lists').some((l) => l !== r && l.name.toLowerCase() === patch.name.toLowerCase())) fail('Er is al een lijst met die naam');
       if (table === 'list_entries') {
         if (patch.in_cart === true && !r.in_cart) patch = { ...patch, cart_at: now() };
         if (patch.in_cart === false) patch = { ...patch, cart_at: null, cart_store_id: null };
@@ -124,6 +136,7 @@ export function createDemoApi() {
         db.list_entries = db.list_entries.filter((e) => e.item_id !== id);
         db.item_positions = db.item_positions.filter((p) => p.item_id !== id);
       }
+      if (table === 'lists') db.list_entries = db.list_entries.filter((e) => e.list_id !== id);
       if (table === 'categories') db.items.forEach((i) => { if (i.category_id === id) i.category_id = null; });
       if (table === 'stores') {
         db.item_positions = db.item_positions.filter((p) => p.store_id !== id);
@@ -142,7 +155,7 @@ export function createDemoApi() {
       save();
     },
 
-    async finishShopping(storeId, positions) {
+    async finishShopping(listId, storeId, positions) {
       const f = fam();
       if (storeId) {
         for (const { item_id, pos } of positions) {
@@ -150,7 +163,7 @@ export function createDemoApi() {
           if (p) p.pos = pos; else db.item_positions.push({ store_id: storeId, item_id, family_id: f, pos });
         }
       }
-      const cart = db.list_entries.filter((e) => e.family_id === f && e.in_cart);
+      const cart = db.list_entries.filter((e) => e.family_id === f && e.in_cart && (!listId || e.list_id === listId));
       for (const e of cart) {
         const it = db.items.find((i) => i.id === e.item_id);
         if (it) { it.use_count += 1; it.last_used = now(); }

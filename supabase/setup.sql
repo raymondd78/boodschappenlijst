@@ -63,21 +63,44 @@ create table if not exists public.item_positions (
   primary key (store_id, item_id)
 );
 
--- Wat er nu op de lijst of in de kar staat
+-- Lijstjes (versie 1.2): een gezin kan meerdere lijsten hebben, elk met een eigen naam
+create table if not exists public.lists (
+  id          uuid primary key default gen_random_uuid(),
+  family_id   uuid not null references public.families(id) on delete cascade,
+  name        text not null check (char_length(btrim(name)) between 1 and 60),
+  created_at  timestamptz not null default now()
+);
+create unique index if not exists lists_family_name on public.lists (family_id, lower(name));
+
+-- Wat er nu op een lijst of in de kar staat
 create table if not exists public.list_entries (
   id            uuid primary key default gen_random_uuid(),
   family_id     uuid not null references public.families(id) on delete cascade,
+  list_id       uuid not null references public.lists(id) on delete cascade,
   item_id       uuid not null references public.items(id) on delete cascade,
   note          text check (note is null or char_length(note) <= 120),
   qty           integer not null default 1 check (qty between 1 and 99),
   in_cart       boolean not null default false,
   cart_at       timestamptz,
   cart_store_id uuid references public.stores(id) on delete set null,
-  added_at      timestamptz not null default now(),
-  unique (family_id, item_id)
+  added_at      timestamptz not null default now()
 );
 -- Aantal (versie 1.1): ook voor bestaande databases
 alter table public.list_entries add column if not exists qty integer not null default 1 check (qty between 1 and 99);
+
+-- Lijstjes (versie 1.2): bestaande databases bijwerken. Elk gezin zonder lijst krijgt
+-- "Boodschappenlijst"; wat al op de lijst stond gaat daarin.
+alter table public.list_entries add column if not exists list_id uuid references public.lists(id) on delete cascade;
+insert into public.lists (family_id, name)
+  select f.id, 'Boodschappenlijst' from public.families f
+  where not exists (select 1 from public.lists l where l.family_id = f.id);
+update public.list_entries e set list_id = (
+    select l.id from public.lists l where l.family_id = e.family_id order by l.created_at, l.id limit 1)
+  where e.list_id is null;
+alter table public.list_entries alter column list_id set not null;
+alter table public.list_entries drop constraint if exists list_entries_family_id_item_id_key;
+create unique index if not exists list_entries_list_item on public.list_entries (list_id, item_id);
+create index if not exists list_entries_family on public.list_entries (family_id);
 
 -- Sjablonen voor nieuwe gezinnen (niet via de API leesbaar)
 create table if not exists public.tpl_categories (name text primary key, position integer not null);
@@ -131,6 +154,24 @@ drop trigger if exists list_entries_cart_time on public.list_entries;
 create trigger list_entries_cart_time before insert or update on public.list_entries
   for each row execute function public.list_entries_cart_time();
 
+-- Lijstregel hoort bij een lijst van hetzelfde gezin. Zonder lijst (oudere app-versie)
+-- gaat de regel naar de oudste lijst van het gezin.
+create or replace function public.list_entries_check_list()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.list_id is null then
+    select id into new.list_id from public.lists
+      where family_id = new.family_id order by created_at, id limit 1;
+  elsif not exists (select 1 from public.lists where id = new.list_id and family_id = new.family_id) then
+    raise exception 'Deze lijst hoort niet bij het gezin';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists list_entries_check_list on public.list_entries;
+create trigger list_entries_check_list before insert or update of list_id, family_id on public.list_entries
+  for each row execute function public.list_entries_check_list();
+
 -- Na verwijderen van een lid: starter-rol doorgeven of leeg gezin opruimen
 create or replace function public.members_after_delete()
 returns trigger language plpgsql security definer set search_path = public as $$
@@ -170,6 +211,7 @@ begin
   insert into public.members (family_id, user_id, name, status, is_starter)
     values (fam.id, auth.uid(), btrim(p_name), 'approved', true);
 
+  insert into public.lists (family_id, name) values (fam.id, 'Boodschappenlijst');
   insert into public.categories (family_id, name, position)
     select fam.id, name, position from public.tpl_categories;
   insert into public.stores (family_id, name, position)
@@ -214,15 +256,19 @@ begin
   if not found then raise exception 'Aanvraag niet gevonden'; end if;
 end $$;
 
--- "Klaar": geleerde posities opslaan, gebruik tellen en de kar leegmaken
+-- "Klaar": geleerde posities opslaan, gebruik tellen en de kar van één lijst leegmaken
+-- p_list: de lijst (null = alle lijsten van het gezin)
 -- p_positions: [{"item_id": "...", "pos": 1234.5}, ...]
-create or replace function public.finish_shopping(p_store uuid, p_positions jsonb)
+create or replace function public.finish_shopping(p_list uuid, p_store uuid, p_positions jsonb)
 returns integer language plpgsql security definer set search_path = public as $$
 declare
   fam uuid := public.my_family();
   n integer;
 begin
   if fam is null then raise exception 'Geen toegang'; end if;
+  if p_list is not null and not exists (select 1 from public.lists where id = p_list and family_id = fam) then
+    raise exception 'Lijst niet gevonden';
+  end if;
 
   if p_store is not null and exists (select 1 from public.stores where id = p_store and family_id = fam) then
     insert into public.item_positions (store_id, item_id, family_id, pos)
@@ -234,12 +280,20 @@ begin
 
   update public.items set use_count = use_count + 1, last_used = now()
     where family_id = fam
-      and id in (select item_id from public.list_entries where family_id = fam and in_cart);
+      and id in (select item_id from public.list_entries
+                 where family_id = fam and in_cart and (p_list is null or list_id = p_list));
 
-  delete from public.list_entries where family_id = fam and in_cart;
+  delete from public.list_entries
+    where family_id = fam and in_cart and (p_list is null or list_id = p_list);
   get diagnostics n = row_count;
   return n;
 end $$;
+
+-- Oude aanroep (versie 1.1, zonder lijst): kar van alle lijsten leegmaken
+create or replace function public.finish_shopping(p_store uuid, p_positions jsonb)
+returns integer language sql security definer set search_path = public as $$
+  select public.finish_shopping(null::uuid, p_store, p_positions)
+$$;
 
 -- ---------- Rechten en Row Level Security ----------
 
@@ -247,6 +301,7 @@ alter table public.families       enable row level security;
 alter table public.members        enable row level security;
 alter table public.categories     enable row level security;
 alter table public.stores         enable row level security;
+alter table public.lists          enable row level security;
 alter table public.items          enable row level security;
 alter table public.item_positions enable row level security;
 alter table public.list_entries   enable row level security;
@@ -271,7 +326,7 @@ create policy members_delete on public.members for delete to authenticated
 do $$
 declare t text;
 begin
-  foreach t in array array['categories', 'stores', 'items', 'item_positions', 'list_entries'] loop
+  foreach t in array array['categories', 'stores', 'lists', 'items', 'item_positions', 'list_entries'] loop
     execute format('drop policy if exists %I on public.%I', t || '_family', t);
     execute format(
       'create policy %I on public.%I for all to authenticated
@@ -290,25 +345,27 @@ grant usage on schema public to authenticated;
 grant select on public.families to authenticated;
 grant select, delete on public.members to authenticated;
 grant select, insert, update, delete
-  on public.categories, public.stores, public.items, public.item_positions, public.list_entries
+  on public.categories, public.stores, public.lists, public.items, public.item_positions, public.list_entries
   to authenticated;
 
 revoke execute on function public.create_family(text)            from public, anon;
 revoke execute on function public.join_family(text, text)        from public, anon;
 revoke execute on function public.approve_member(uuid)           from public, anon;
 revoke execute on function public.finish_shopping(uuid, jsonb)   from public, anon;
+revoke execute on function public.finish_shopping(uuid, uuid, jsonb) from public, anon;
 revoke execute on function public.gen_family_code()              from public, anon, authenticated;
 grant  execute on function public.create_family(text)            to authenticated;
 grant  execute on function public.join_family(text, text)        to authenticated;
 grant  execute on function public.approve_member(uuid)           to authenticated;
 grant  execute on function public.finish_shopping(uuid, jsonb)   to authenticated;
+grant  execute on function public.finish_shopping(uuid, uuid, jsonb) to authenticated;
 
 -- ---------- Realtime (wijzigingen direct naar alle telefoons) ----------
 
 do $$
 declare t text;
 begin
-  foreach t in array array['members', 'categories', 'stores', 'items', 'item_positions', 'list_entries'] loop
+  foreach t in array array['members', 'categories', 'stores', 'lists', 'items', 'item_positions', 'list_entries'] loop
     if not exists (select 1 from pg_publication_tables
                    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);

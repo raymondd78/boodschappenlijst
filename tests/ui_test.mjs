@@ -33,6 +33,12 @@ await shot('02-welkom');
 // 2. Gezin starten
 await page.type('#new-name', 'Raymond');
 await click('[data-action="create-family"]');
+// Eerst het overzicht van de lijstjes, met de standaardlijst
+await page.waitForSelector('.list-btn');
+assert((await text('.list-btns')).includes('Boodschappenlijst'), 'overzicht toont "Boodschappenlijst"');
+assert((await text('.list-count')) === 'leeg', 'lege lijst toont "leeg"');
+await shot('02b-lijstjes');
+await click('[data-action="open-list"]');
 await page.waitForSelector('#add-input');
 assert((await text('.topbar')).match(/[A-Z]{4}/), 'gezinscode zichtbaar');
 assert((await page.$$('.chip.add')).length === 12, '12 vaak gekozen artikelen');
@@ -70,7 +76,7 @@ await click('[data-action="save"]');
 await sleep(300);
 const listText = await text('.content');
 assert(listText.includes('Wc-reiniger') && listText.includes('2 stuks'), 'nieuw artikel met notitie op lijst');
-assert(/5 artikelen/i.test(listText), '5 artikelen (kwark stond er al → aantal 3)');
+assert(/5 regels/i.test(listText), '5 regels (kwark stond er al → aantal 3)');
 await shot('06-lijst-categorie');
 
 // 3b. Aantal met + en −
@@ -136,8 +142,8 @@ await sleep(500);
 assert((await text('.content')).includes('Niets te halen'), 'kar geleegd');
 
 // 7. Volgende keer: dezelfde artikelen staan in geleerde volgorde
+await click('.nav [data-tab="lijst"]');
 for (const n of order) {
-  await click('.nav [data-tab="lijst"]');
   await page.type('#add-input', n);
   await sleep(80);
   await page.keyboard.press('Enter');
@@ -161,10 +167,88 @@ await click('[data-action="move-category"][data-dir="1"]');
 await sleep(250);
 assert((await page.$$eval('[data-action="rename-category"] .name', (e) => e[0].textContent)).includes('Brood'), 'categorie verplaatst');
 
+// 8b. Meerdere lijstjes
+await click('.nav [data-tab="lijst"]');
+await click('[data-action="overview"]');
+await page.waitForSelector('.list-btn');
+assert((await text('.list-count')) === '5', 'overzicht telt 5 regels');
+await click('[data-action="new-list"]');
+await page.waitForSelector('#nl-name');
+assert((await page.$eval('#nl-name', (e) => e.value)) === 'Boodschappenlijst', 'standaardnaam ingevuld');
+await shot('16-nieuwe-lijst');
+await click('.sheet [data-action="save"]');
+await page.waitForSelector('.list-title');
+await sleep(300);
+assert((await text('.list-title h1')) === 'Boodschappenlijst (2)', 'dubbele naam krijgt (2)');
+assert((await text('.content')).includes('De lijst is leeg'), 'nieuwe lijst is leeg');
+await page.type('#add-input', 'Bananen');
+await page.keyboard.press('Enter');
+await sleep(300);
+assert((await text('.list-sub')).startsWith('1 regel'), 'artikel op tweede lijst (staat ook op de eerste)');
+assert((await page.$$('.list-chip')).length === 2, 'wisselknoppen voor 2 lijsten');
+// naam wijzigen via het potloodje
+await click('[data-action="edit-list"]');
+await page.waitForSelector('#el-name');
+await page.$eval('#el-name', (e) => { e.value = ''; });
+await page.type('#el-name', 'Barbecue');
+await shot('17-lijst-wijzigen');
+await click('.sheet [data-action="save"]');
+await sleep(300);
+assert((await text('.list-title h1')) === 'Barbecue', 'lijst hernoemd');
+// in de kar: blijft zichtbaar op de lijst, gemarkeerd
+await click('.nav [data-tab="winkelen"]');
+await click('.shop [data-action="to-cart"]');
+await sleep(500);
+await click('.nav [data-tab="lijst"]');
+assert((await page.$$('.row.in-cart')).length === 1, 'regel in de kar staat gemarkeerd op de lijst');
+assert((await text('.list-sub')) === '1 regel · 1 in kar', 'kopregel telt kar mee');
+await shot('18-lijst-met-kar');
+await click('[data-action="from-cart"]');
+await sleep(300);
+assert((await page.$$('.row.in-cart')).length === 0, 'Terug haalt regel uit de kar');
+// wisselen
+await page.evaluate(() => [...document.querySelectorAll('.list-chip')].find((c) => c.textContent.includes('Boodschappenlijst')).click());
+await sleep(250);
+assert((await text('.list-title h1')) === 'Boodschappenlijst', 'wisselen met de knoppen');
+await click('[data-action="overview"]');
+const counts = await page.$$eval('.list-count', (els) => els.map((e) => e.textContent));
+assert(JSON.stringify(counts) === '["5","1"]', 'overzicht toont aantal per lijst');
+await shot('19-lijstjes-twee');
+// verwijderen met bevestiging
+await page.evaluate(() => [...document.querySelectorAll('.list-btn')].find((b) => b.textContent.includes('Barbecue')).click());
+await sleep(200);
+await click('[data-action="edit-list"]');
+await click('.sheet [data-action="delete"]');
+await page.waitForSelector('.sheet [data-action="yes"]');
+assert((await text('.sheet')).includes('“Barbecue” en de regel erin'), 'bevestiging noemt lijst en regels');
+await shot('20-verwijderen-bevestigen');
+await click('.sheet [data-action="yes"]');
+await sleep(400);
+assert((await page.$$('.list-btn')).length === 1, 'lijst verwijderd, terug in overzicht');
+// lege lijst: verwijderen zonder bevestiging
+await click('[data-action="new-list"]');
+await page.waitForSelector('#nl-name');
+await click('.sheet [data-action="quick-name"]');
+await click('.sheet [data-action="save"]');
+await page.waitForSelector('.list-title');
+await sleep(300);
+assert((await text('.list-title h1')) === 'Weekend', 'snelle naam');
+await click('[data-action="edit-list"]');
+await click('.sheet [data-action="delete"]');
+await sleep(400);
+assert(!(await page.$('.sheet')) && (await page.$$('.list-btn')).length === 1, 'lege lijst direct verwijderd');
+// laatste lijst blijft
+await click('[data-action="open-list"]');
+await click('[data-action="edit-list"]');
+await click('.sheet [data-action="delete"]');
+await sleep(300);
+assert((await text('#toast-root')).includes('minstens één lijst'), 'laatste lijst kan niet weg');
+
 // 9. Herladen: data blijft (cache + demo-opslag)
 await page.reload({ waitUntil: 'networkidle0' });
 await sleep(400);
 assert((await text('#app')).includes('Beheer'), 'na herladen nog ingelogd');
+assert(!!(await page.$('.list-btn')), 'na herladen eerst het overzicht');
 await page.screenshot({ path: out + '15-beheer-onder.png', fullPage: true });
 
 console.log(errors.length ? 'FOUTEN IN CONSOLE:\n' + errors.join('\n') : 'geen fouten in de console');

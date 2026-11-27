@@ -58,8 +58,9 @@ Open de link in Chrome → menu **⋮ → App installeren** (of *Toevoegen aan s
 
 | Scherm | Wat je doet |
 |---|---|
-| **Lijst** | Typ een deel van de naam en druk op Enter (pakt de beste match), of tik op een suggestie. Bestaat het artikel nog niet, kies dan *+ Nieuw artikel* en een categorie. Met **−** en **+** pas je het aantal aan; nog een tik op een vaak gekozen artikel telt er één bij. **−** bij aantal 1 (prullenbakje) haalt het van de lijst. Tik op de naam voor notitie en categorie. |
-| **Winkelen** | Kies de winkel. Bij 2 of meer staat het aantal (bijv. **3×**) achter de naam. Tik een artikel aan → het hele aantal gaat in de kar. *Kar* toont wat je al hebt (↩ zet terug). *Klaar* leegt de kar en onthoudt de volgorde. |
+| **Lijstjes** | De app opent met het overzicht van alle lijsten, met op elke knop het aantal regels (ook wat al in de kar ligt). **Nieuwe lijst** maakt een lijst; de naam is standaard *Boodschappenlijst* en is aan te passen. Bestaat de naam al, dan komt er *(2)* achter. In een lijst wissel je met de knoppen bovenaan van lijst; **‹ Lijstjes** (of nog een keer op *Lijst* tikken) brengt je terug. Het potloodje naast de naam: naam wijzigen of de lijst verwijderen (met bevestiging als er nog iets in staat; er blijft altijd minstens één lijst). Alle lijsten zijn van het hele gezin. |
+| **Lijst** | Typ een deel van de naam en druk op Enter (pakt de beste match), of tik op een suggestie. Bestaat het artikel nog niet, kies dan *+ Nieuw artikel* en een categorie. Met **−** en **+** pas je het aantal aan; nog een tik op een vaak gekozen artikel telt er één bij. **−** bij aantal 1 (prullenbakje) haalt het van de lijst. Tik op de naam voor notitie en categorie. Wat al in de kar ligt blijft op de lijst staan, doorgestreept met een vinkje; **Terug** zet het weer op de lijst. |
+| **Winkelen** | Kies (bij meer lijsten) de lijst en de winkel. Bij 2 of meer staat het aantal (bijv. **3×**) achter de naam. Tik een artikel aan → het hele aantal gaat in de kar. *Kar* toont wat je al hebt (↩ zet terug). *Klaar* leegt de kar van die lijst en onthoudt de volgorde. |
 | **Beheer** | Gezinscode en leden (goedkeuren, weigeren, verwijderen), winkels (toevoegen, hernoemen, geleerde volgorde wissen ↺), categorieën (volgorde = standaardroute, ↑↓), artikelen zoeken en wijzigen. |
 
 Iedereen in het gezin mag leden verwijderen en winkels/categorieën/artikelen beheren; alleen de starter keurt nieuwe leden goed. Vertrekt de starter, dan gaat die rol naar het langst aanwezige lid.
@@ -94,6 +95,7 @@ Nieuwe installaties gebruiken gewoon `supabase/setup.sql`. Heb je de database al
 | Versie | Script | Wat |
 |---|---|---|
 | 1.1 | `2026-11-27_aantal.sql` | Aantal per artikel op de lijst |
+| 1.2 | `2026-11-27_lijstjes.sql` | Meerdere lijstjes; de bestaande lijst wordt *Boodschappenlijst* |
 
 ### App
 

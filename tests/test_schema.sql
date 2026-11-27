@@ -31,6 +31,7 @@ select pg_temp.check((select count(*) from stores) = 3, '3 startwinkels');
 select pg_temp.check((select count(*) from items) = 162, '162 startartikelen');
 select pg_temp.check((select count(*) from items where category_id is null) = 0, 'alle artikelen hebben een categorie');
 select pg_temp.check((select is_starter from members where user_id = :A), 'A is starter');
+select pg_temp.check((select count(*) from lists where name = 'Boodschappenlijst') = 1, 'startlijst "Boodschappenlijst"');
 
 -- Tweede gezin aanmaken met hetzelfde toestel mag niet
 do $$ begin
@@ -117,13 +118,43 @@ select pg_temp.check((select cart_at is null and cart_store_id is null from list
 update list_entries set in_cart = true, cart_store_id = :'store'
   where item_id = (select id from items where name = 'Soja yoghurt');
 
-select public.finish_shopping(:'store',
+-- Meerdere lijstjes: tweede lijst met deels dezelfde artikelen
+select id as list1 from lists where name = 'Boodschappenlijst' \gset
+select set_config('test.list1', :'list1', false) is not null as _l1 \gset
+select pg_temp.check((select count(*) from list_entries where list_id = :'list1') = 3, 'regels zonder lijst gaan naar de oudste lijst');
+insert into lists (family_id, name) values (:'fam', 'Barbecue') returning id as list2 \gset
+insert into list_entries (family_id, list_id, item_id)
+  select :'fam', :'list2', id from items where name in ('Bananen', 'Schouderham');
+select pg_temp.check((select count(*) from list_entries where list_id = :'list2') = 2, 'zelfde artikel mag op twee lijsten');
+do $$ begin
+  insert into public.lists (family_id, name) select family_id, 'barbecue' from public.lists limit 1;
+  raise exception 'TEST MISLUKT: dubbele lijstnaam';
+exception when unique_violation then
+  raise notice 'ok  dubbele lijstnaam geweigerd';
+end $$;
+do $$ begin
+  insert into public.list_entries (family_id, list_id, item_id)
+    select l.family_id, l.id, (select id from public.items where name = 'Bananen') from public.lists l where l.name = 'Barbecue';
+  raise exception 'TEST MISLUKT: artikel twee keer op dezelfde lijst';
+exception when unique_violation then
+  raise notice 'ok  artikel maar één keer per lijst';
+end $$;
+update list_entries set in_cart = true, cart_store_id = :'store' where list_id = :'list2' and item_id = (select id from items where name = 'Bananen');
+
+select public.finish_shopping(:'list1', :'store',
   (select jsonb_agg(jsonb_build_object('item_id', id, 'pos', 1234.5)) from items where name in ('Bananen', 'Soja yoghurt'))
 ) as removed \gset
 select pg_temp.check(:removed = 2, 'Klaar verwijdert 2 artikelen uit de kar');
-select pg_temp.check((select count(*) from list_entries) = 1, 'artikel dat niet in de kar zat blijft op de lijst');
+select pg_temp.check((select count(*) from list_entries where list_id = :'list1') = 1, 'artikel dat niet in de kar zat blijft op de lijst');
+select pg_temp.check((select count(*) from list_entries where list_id = :'list2' and in_cart) = 1, 'kar van de andere lijst blijft staan');
 select pg_temp.check((select count(*) from item_positions where store_id = :'store') = 2, 'posities opgeslagen');
 select pg_temp.check((select use_count from items where name = 'Bananen') = 6, 'gebruiksteller opgehoogd');
+-- Oude aanroep zonder lijst (versie 1.1) leegt de kar van alle lijsten
+select public.finish_shopping(:'store', '[]'::jsonb) as removed_old \gset
+select pg_temp.check(:removed_old = 1, 'oude Klaar-aanroep werkt nog');
+-- Lijst verwijderen haalt de regels mee
+delete from lists where id = :'list2';
+select pg_temp.check((select count(*) from list_entries where list_id = :'list2') = 0, 'regels van verwijderde lijst weg');
 
 -- C kan geen posities in winkel van A zetten
 select pg_temp.as_user(:C);
@@ -131,6 +162,17 @@ select public.finish_shopping(:'store',
   (select jsonb_agg(jsonb_build_object('item_id', id, 'pos', 1)) from items limit 1)) as c_removed \gset
 select pg_temp.as_user(:A);
 select pg_temp.check((select count(*) from item_positions where pos = 1) = 0, 'C kan geen posities in gezin A zetten');
+-- C kan geen regel aan een lijst van gezin A hangen
+select pg_temp.as_user(:C);
+do $$ begin
+  insert into public.list_entries (family_id, list_id, item_id)
+    select public.my_family(), current_setting('test.list1')::uuid, (select id from public.items limit 1);
+  raise exception 'TEST MISLUKT: regel op lijst van ander gezin';
+exception when raise_exception then
+  if sqlerrm like 'TEST MISLUKT%' then raise; end if;
+  raise notice 'ok  lijst van ander gezin geweigerd (%)', sqlerrm;
+end $$;
+select pg_temp.as_user(:A);
 
 -- B verwijdert de starter A → B wordt starter
 select pg_temp.as_user(:B);
@@ -142,6 +184,6 @@ delete from members where user_id = :B;
 reset role;
 select pg_temp.check((select count(*) from families where code = :'fam_code') = 0, 'leeg gezin opgeruimd');
 select pg_temp.check((select count(*) from items where family_id = :'fam') = 0, 'data van leeg gezin opgeruimd');
-select pg_temp.check((select count(*) from pg_publication_tables where pubname = 'supabase_realtime') = 6, 'realtime aan voor 6 tabellen');
+select pg_temp.check((select count(*) from pg_publication_tables where pubname = 'supabase_realtime') = 7, 'realtime aan voor 7 tabellen');
 
 \echo 'ALLE SQL-TESTS GESLAAGD'

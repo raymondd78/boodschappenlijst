@@ -4,7 +4,7 @@ import { createSupabaseApi } from './api-supabase.js';
 import { createDemoApi } from './api-demo.js';
 import { sortByStore, groupByCategory, effectivePosition, learnPositions } from './order.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const $app = document.getElementById('app');
 const $sheet = document.getElementById('sheet-root');
 const $toast = document.getElementById('toast-root');
@@ -30,6 +30,9 @@ const ICON = {
   list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/></svg>',
   cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2.2l2.3 11h10.3l2-8H6.3"/><circle cx="9.5" cy="19.5" r="1.4"/><circle cx="16.5" cy="19.5" r="1.4"/></svg>',
   trash: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  back: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg>',
 };
 
@@ -43,6 +46,8 @@ const S = {
   tab: prefs.get('tab', 'lijst'),
   sortMode: prefs.get('sort', 'categorie'),
   storeId: prefs.get('store', null),
+  listId: prefs.get('list', null),   // huidige (laatst geopende) lijst
+  overview: true,                    // lijstoverzicht tonen op het tabblad Lijst
   search: '',
   manageSearch: '',
   showMoreFav: false,
@@ -54,10 +59,16 @@ function setData(raw) {
     members: raw.members,
     categories: [...raw.categories].sort((a, b) => a.position - b.position),
     stores: [...raw.stores].sort((a, b) => a.position - b.position),
+    lists: [...(raw.lists || [])].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))),
     items: raw.items,
     entries: raw.entries,
     positionRows: raw.positions,
   };
+  if (!d.lists.some((l) => l.id === S.listId)) {
+    // Lijst verdwenen (bijv. door een ander gezinslid verwijderd): terug naar het overzicht
+    if (S.listId && S.data) S.overview = true;
+    S.listId = d.lists[0]?.id ?? null;
+  }
   reindex(d);
   S.data = d;
   if (!d.stores.some((s) => s.id === S.storeId)) S.storeId = d.stores[0]?.id ?? null;
@@ -67,14 +78,39 @@ function reindex(d = S.data) {
   d.catsById = new Map(d.categories.map((c) => [c.id, c]));
   d.itemsById = new Map(d.items.map((i) => [i.id, i]));
   d.positions = new Map(d.positionRows.map((p) => [p.store_id + '|' + p.item_id, p.pos]));
-  d.entryByItem = new Map(d.entries.map((e) => [e.item_id, e]));
+  // artikel → regel op de huidige lijst
+  d.entryByItem = new Map(d.entries.filter((e) => e.list_id === S.listId).map((e) => [e.item_id, e]));
 }
 
 const me = () => S.membership?.member;
 const familyId = () => S.membership?.family?.id;
-const listEntries = () => S.data.entries.filter((e) => !e.in_cart && S.data.itemsById.has(e.item_id));
-const cartEntries = () => S.data.entries.filter((e) => e.in_cart && S.data.itemsById.has(e.item_id))
+/** Alle regels van een lijst (ook die in de kar) */
+const entriesOf = (listId) => S.data.entries.filter((e) => e.list_id === listId && S.data.itemsById.has(e.item_id));
+const curEntries = () => entriesOf(S.listId);
+const listEntries = () => curEntries().filter((e) => !e.in_cart);
+const cartEntries = () => curEntries().filter((e) => e.in_cart)
   .sort((a, b) => String(a.cart_at).localeCompare(String(b.cart_at)));
+const currentList = () => S.data.lists.find((l) => l.id === S.listId) ?? null;
+const DEFAULT_LIST_NAME = 'Boodschappenlijst';
+
+/** Bestaat de naam al, dan "(2)", "(3)" … erachter */
+function uniqueListName(name, exceptId = null) {
+  const taken = new Set(S.data.lists.filter((l) => l.id !== exceptId).map((l) => norm(l.name)));
+  if (!taken.has(norm(name))) return name;
+  const base = name.replace(/\s*\(\d+\)$/, '').slice(0, 54);
+  for (let n = 2; ; n++) {
+    const c = `${base} (${n})`;
+    if (!taken.has(norm(c))) return c;
+  }
+}
+
+function shortDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return 'vandaag';
+  return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+}
 const pendingMembers = () => (S.data?.members || []).filter((m) => m.status === 'pending');
 const overigCategory = () => S.data.categories.find((c) => norm(c.name) === 'overig');
 const storeName = (id) => S.data.stores.find((s) => s.id === id)?.name ?? '';
@@ -85,9 +121,9 @@ const cacheKey = () => 'bl-cache-' + (S.api?.mode || 'x');
 function cacheSave() {
   try {
     if (!S.data) { localStorage.removeItem(cacheKey()); return; }
-    const { members, categories, stores, items, entries, positionRows } = S.data;
+    const { members, categories, stores, lists, items, entries, positionRows } = S.data;
     localStorage.setItem(cacheKey(), JSON.stringify({
-      membership: S.membership, data: { members, categories, stores, items, entries, positions: positionRows },
+      membership: S.membership, data: { members, categories, stores, lists, items, entries, positions: positionRows },
     }));
   } catch { /* niet erg */ }
 }
@@ -243,7 +279,8 @@ function nav() {
 }
 
 function viewMain() {
-  const body = S.tab === 'winkelen' ? viewShop() : S.tab === 'beheer' ? viewManage() : viewList();
+  const body = S.tab === 'winkelen' ? viewShop() : S.tab === 'beheer' ? viewManage()
+    : (S.overview || !currentList()) ? viewOverview() : viewList();
   return `<div class="screen">${body}</div>${nav()}`;
 }
 
@@ -252,25 +289,67 @@ function storeChips(action = 'pick-store') {
     `<button class="chip" data-action="${action}" data-id="${s.id}" aria-pressed="${s.id === S.storeId}">${esc(s.name)}</button>`).join('')}</div>`;
 }
 
+// ---- Lijstjes (overzicht) ----
+
+function viewOverview() {
+  const lists = S.data.lists;
+  const buttons = lists.map((l) => {
+    const n = entriesOf(l.id).length;
+    const inCart = entriesOf(l.id).filter((e) => e.in_cart).length;
+    const current = l.id === S.listId && lists.length > 1;
+    const meta = [current ? 'Laatst geopend' : '', inCart ? `${inCart} in kar` : '', current ? '' : `gemaakt ${shortDate(l.created_at)}`]
+      .filter(Boolean).join(' · ');
+    return `<button class="list-btn${current ? ' current' : ''}" data-action="open-list" data-id="${l.id}">
+      <span class="list-ic" aria-hidden="true">${current ? ICON.cart : ICON.list}</span>
+      <span class="list-txt"><span class="name">${esc(l.name)}</span><span class="meta">${esc(meta.charAt(0).toUpperCase() + meta.slice(1))}</span></span>
+      <span class="list-count${n ? '' : ' empty-count'}" aria-label="${plural(n, 'regel', 'regels')}">${n || 'leeg'}</span>
+    </button>`;
+  }).join('');
+  return `${topbar('Lijstjes')}
+  <div class="content">
+    <p class="muted small" style="margin:2px 6px 12px">${lists.length ? 'Kies een lijst om te bewerken' : 'Nog geen lijst. Maak er een met de knop hieronder.'}</p>
+    <div class="list-btns">${buttons}</div>
+    <div class="shop-pad"></div>
+  </div>
+  <div class="stickybar"><button class="btn primary" data-action="new-list">${ICON.plus} Nieuwe lijst</button></div>`;
+}
+
+/** Knoppen om snel van lijst te wisselen (alleen bij meer dan één lijst) */
+function listChips() {
+  if (S.data.lists.length < 2) return '';
+  return `<div class="chips scroll" role="group" aria-label="Wissel van lijst">${S.data.lists.map((l) =>
+    `<button class="chip list-chip" data-action="pick-list" data-id="${l.id}" aria-pressed="${l.id === S.listId}">${esc(l.name)} <b>${entriesOf(l.id).length}</b></button>`).join('')}</div>`;
+}
+
 // ---- Lijst (samenstellen) ----
 
 function viewList() {
-  const entries = listEntries();
-  const cart = cartEntries().length;
+  const lst = currentList();
+  const entries = curEntries();
+  const cart = entries.filter((e) => e.in_cart).length;
+  const row = (it, showCat) => { const e = S.data.entryByItem.get(it.id); return e.in_cart ? cartRow(e) : entryRow(e, showCat); };
   let list = '';
   if (!entries.length) {
     list = `<div class="empty"><strong>De lijst is leeg</strong>Typ hierboven of tik op een vaak gekozen artikel.</div>`;
   } else if (S.sortMode === 'winkel') {
     const items = sortByStore(entries.map((e) => S.data.itemsById.get(e.item_id)), S.storeId, S.data.positions, S.data.catsById);
-    list = `<div class="card">${items.map((it) => entryRow(S.data.entryByItem.get(it.id), true)).join('')}</div>`;
+    list = `<div class="card">${items.map((it) => row(it, true)).join('')}</div>`;
   } else {
     const groups = groupByCategory(entries.map((e) => S.data.itemsById.get(e.item_id)), S.data.catsById);
     list = `<div class="card">${groups.map((g) =>
       `<div class="group-title">${esc(g.category?.name ?? 'Zonder categorie')}</div>` +
-      g.items.map((it) => entryRow(S.data.entryByItem.get(it.id), false)).join('')).join('')}</div>`;
+      g.items.map((it) => row(it, false)).join('')).join('')}</div>`;
   }
-  return `${topbar('Lijst')}
+  return `<header class="topbar">
+      <button class="back-btn" data-action="overview">${ICON.back} Lijstjes</button>
+      <span style="flex:1"></span>
+      <button class="code-chip" data-action="tab" data-tab="beheer" aria-label="Gezinscode">${esc(S.membership.family.code)}</button></header>
+    ${S.offline ? '<div class="banner">Geen verbinding. Je ziet de laatst bekende lijst; wijzigingen lukken pas weer met internet.</div>' : ''}
   <div class="content">
+    <div class="list-title"><h1>${esc(lst.name)}</h1>
+      <button class="icon-btn" data-action="edit-list" aria-label="Lijst wijzigen">${ICON.pencil}</button></div>
+    <div class="list-sub">${plural(entries.length, 'regel', 'regels')}${cart ? ` · ${cart} in kar` : ''}</div>
+    ${listChips()}
     <div class="addbox">
       <input id="add-input" class="field" type="search" placeholder="Artikel toevoegen…" autocomplete="off" enterkeyhint="done" value="${esc(S.search)}">
     </div>
@@ -282,9 +361,18 @@ function viewList() {
       </div>
     </div>
     ${S.sortMode === 'winkel' ? storeChips() : ''}
-    <div class="section-title">${plural(entries.length, 'artikel', 'artikelen')}</div>
+    <div class="section-title">Op de lijst</div>
     ${list}
-    ${cart ? `<p class="muted small" style="margin:12px 6px">${plural(cart, 'artikel ligt', 'artikelen liggen')} al in de kar. <a href="#" data-action="tab" data-tab="winkelen">Bekijk</a></p>` : ''}
+  </div>`;
+}
+
+/** Regel die al in de kar ligt: blijft zichtbaar op de lijst, met "Terug" */
+function cartRow(e) {
+  const it = S.data.itemsById.get(e.item_id);
+  return `<div class="row in-cart">
+    <span class="tick on" aria-hidden="true"></span>
+    <div class="main"><span class="name">${esc(it.name)}</span>${qtyBadge(e)}${e.note ? `<span class="note">${esc(e.note)}</span>` : ''}<span class="cart-label">In kar</span></div>
+    <button class="btn small ghost" data-action="from-cart" data-id="${e.id}" aria-label="${esc(it.name)} terug op de lijst">Terug</button>
   </div>`;
 }
 
@@ -347,6 +435,9 @@ function viewSuggest() {
 // ---- Winkelen ----
 
 function viewShop() {
+  if (!currentList()) {
+    return `${topbar('Winkelen')}<div class="content"><div class="empty"><strong>Nog geen lijst</strong>Maak eerst een lijst op het tabblad Lijst.</div></div>`;
+  }
   const entries = listEntries();
   const cart = cartEntries();
   const items = sortByStore(entries.map((e) => S.data.itemsById.get(e.item_id)), S.storeId, S.data.positions, S.data.catsById);
@@ -358,8 +449,10 @@ function viewShop() {
       <span><span class="name">${esc(it.name)}</span>${qtyBadge(e)}${e.note ? `<span class="note">${esc(e.note)}</span>` : ''}<span class="meta">${esc(cat || '')}</span></span>
     </button></div>`;
   }).join('');
+  const multi = S.data.lists.length > 1;
   return `${topbar('Winkelen')}
   <div class="content shop">
+    ${multi ? `<div class="section-title" style="margin-top:4px">Lijst</div>${listChips()}<div class="section-title">Winkel</div>` : ''}
     ${storeChips()}
     <div class="progress"><span>Nog <b>${entries.length}</b></span><span>In de kar <b>${cart.length}</b></span></div>
     ${entries.length ? `<div class="card">${rows}</div>`
@@ -535,16 +628,17 @@ function toast(text, { undo, error } = {}) {
 
 // ---------- Acties ----------
 
-function addToList(item, note = null, qty = 1) {
-  const existing = S.data.entryByItem.get(item.id);
+function addToList(item, note = null, qty = 1, listId = S.listId) {
+  if (!listId || !S.data.lists.some((l) => l.id === listId)) return toast('Kies eerst een lijst', { error: true });
+  const existing = S.data.entries.find((e) => e.list_id === listId && e.item_id === item.id);
   if (existing) {
     if (existing.in_cart) return fromCart(existing);
     changeQty(existing, +1);
     return toast(`${item.name}: ${qtyOf(existing)}× op de lijst`);
   }
-  const temp = { id: tmpId(), family_id: familyId(), item_id: item.id, note, qty, in_cart: false, cart_at: null, cart_store_id: null, added_at: nowIso() };
+  const temp = { id: tmpId(), family_id: familyId(), list_id: listId, item_id: item.id, note, qty, in_cart: false, cart_at: null, cart_store_id: null, added_at: nowIso() };
   mutate(() => S.data.entries.push(temp), async () => {
-    const row = await S.api.insert('list_entries', { family_id: familyId(), item_id: item.id, note, ...(qty > 1 ? { qty } : {}) });
+    const row = await S.api.insert('list_entries', { family_id: familyId(), list_id: listId, item_id: item.id, note, ...(qty > 1 ? { qty } : {}) });
     await syncInserted(temp, row);
   }, 'Toevoegen mislukt');
 }
@@ -569,14 +663,16 @@ function newItemSheet(name) {
       closeSheet();
       S.search = '';
       if (dup) return addToList(dup, note);
+      const listId = S.listId;
+      if (!listId) return toast('Kies eerst een lijst', { error: true });
       const catId = pickedCat();
       const item = { id: tmpId(), family_id: familyId(), name: nm, category_id: catId, use_count: 0, last_used: null };
-      const entry = { id: tmpId(), family_id: familyId(), item_id: item.id, note, qty: 1, in_cart: false, cart_at: null, cart_store_id: null, added_at: nowIso() };
+      const entry = { id: tmpId(), family_id: familyId(), list_id: listId, item_id: item.id, note, qty: 1, in_cart: false, cart_at: null, cart_store_id: null, added_at: nowIso() };
       mutate(() => { S.data.items.push(item); S.data.entries.push(entry); }, async () => {
         const row = await S.api.insert('items', { family_id: familyId(), name: nm, category_id: catId });
         Object.assign(item, row);
         entry.item_id = row.id;
-        const e = await S.api.insert('list_entries', { family_id: familyId(), item_id: row.id, note });
+        const e = await S.api.insert('list_entries', { family_id: familyId(), list_id: listId, item_id: row.id, note });
         await syncInserted(entry, e);
       }, 'Artikel toevoegen mislukt');
     },
@@ -634,7 +730,7 @@ function removeEntry(entry) {
   const idx = S.data.entries.indexOf(entry);
   mutate(() => S.data.entries.splice(idx, 1), () => S.api.remove('list_entries', entry.id), 'Verwijderen mislukt');
   toast(`${it.name} van de lijst gehaald`, {
-    undo: () => addToList(it, entry.note, qtyOf(entry)),
+    undo: () => addToList(it, entry.note, qtyOf(entry), entry.list_id),
   });
 }
 
@@ -677,9 +773,11 @@ async function finish(fromSheet = false) {
   const cart = cartEntries();
   if (!cart.length) return;
   const left = listEntries().length;
+  const listId = S.listId;
+  const multi = S.data.lists.length > 1;
   const ok = await confirmSheet({
     title: 'Klaar met winkelen?',
-    text: `${plural(cart.length, 'artikel gaat', 'artikelen gaan')} uit de kar.` +
+    text: `${plural(cart.length, 'artikel gaat', 'artikelen gaan')} uit de kar${multi ? ` van “${esc(currentList().name)}”` : ''}.` +
       (left ? ` ${plural(left, 'artikel blijft', 'artikelen blijven')} op de lijst staan.` : '') +
       ` De app onthoudt de volgorde voor ${esc(storeName(S.storeId))}.`,
     ok: 'Klaar',
@@ -701,9 +799,90 @@ async function finish(fromSheet = false) {
       const it = S.data.itemsById.get(e.item_id);
       if (it) { it.use_count += 1; it.last_used = nowIso(); }
     }
-    S.data.entries = S.data.entries.filter((e) => !e.in_cart);
-  }, () => S.api.finishShopping(storeId, learned), 'Afronden mislukt');
+    S.data.entries = S.data.entries.filter((e) => !(e.in_cart && e.list_id === listId));
+  }, () => S.api.finishShopping(listId, storeId, learned), 'Afronden mislukt');
   toast('Kar geleegd. Tot de volgende keer!');
+}
+
+// -- Lijstjes --
+
+function openList(id, { overview = false } = {}) {
+  S.listId = id; prefs.set('list', id);
+  S.overview = overview;
+  S.search = '';
+  reindex();
+  render();
+}
+
+const QUICK_NAMES = ['Weekend', 'Feestje', 'Drogist'];
+
+function newListSheet() {
+  openSheet(`<h2>Nieuwe lijst</h2>
+    <label class="lbl" for="nl-name">Naam van de lijst</label>
+    <input id="nl-name" class="field" maxlength="60" value="${esc(DEFAULT_LIST_NAME)}" autofocus>
+    <p class="muted small" style="margin:6px 2px 0">Standaardnaam, tik om aan te passen. Later ook te wijzigen.</p>
+    <label class="lbl">Of kies een snelle naam</label>
+    <div class="chips">${QUICK_NAMES.map((n) => `<button class="chip" data-action="quick-name" data-name="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+    <div class="actions"><button class="btn" data-action="close">Annuleren</button>
+    <button class="btn primary" data-action="save" data-default>Lijst maken</button></div>`, {
+    'quick-name': (el) => { const f = $sheet.querySelector('#nl-name'); f.value = el.dataset.name; f.focus(); },
+    save: () => {
+      const typed = $sheet.querySelector('#nl-name').value.trim() || DEFAULT_LIST_NAME;
+      const name = uniqueListName(typed);
+      closeSheet();
+      mutate(null, async () => {
+        const row = await S.api.insert('lists', { family_id: familyId(), name });
+        S.data.lists.push(row);
+        openList(row.id);
+        window.scrollTo(0, 0);
+        toast(name === typed ? `Lijst “${name}” gemaakt` : `Die naam bestond al: de lijst heet “${name}”`);
+      }, 'Lijst maken mislukt');
+    },
+  });
+}
+
+function editListSheet(lst) {
+  openSheet(`<h2>Lijst wijzigen</h2>
+    <label class="lbl" for="el-name">Naam van de lijst</label>
+    <input id="el-name" class="field" maxlength="60" value="${esc(lst.name)}">
+    <p class="muted small" style="margin:6px 2px 0">Bestaat de naam al, dan komt er automatisch (2) achter.</p>
+    <div class="actions"><button class="btn" data-action="close">Annuleren</button>
+    <button class="btn primary" data-action="save" data-default>Opslaan</button></div>
+    <hr class="divider">
+    <button class="btn danger outline block" data-action="delete">${ICON.trash} Lijst verwijderen</button>`, {
+    save: () => {
+      const typed = $sheet.querySelector('#el-name').value.trim();
+      closeSheet();
+      if (!typed || typed === lst.name) return;
+      const name = uniqueListName(typed, lst.id);
+      if (name === lst.name) return;
+      mutate(() => { lst.name = name; }, () => S.api.update('lists', lst.id, { name }), 'Naam wijzigen mislukt');
+      if (name !== typed) toast(`Die naam bestond al: de lijst heet “${name}”`);
+    },
+    delete: () => deleteList(lst),
+  });
+}
+
+async function deleteList(lst) {
+  if (S.data.lists.length <= 1) { closeSheet(); return toast('Er moet minstens één lijst blijven'); }
+  const n = entriesOf(lst.id).length;
+  if (n) {
+    const ok = await confirmSheet({
+      title: 'Lijst verwijderen?',
+      text: `“${esc(lst.name)}” en ${n === 1 ? 'de regel' : `de ${n} regels`} erin worden voor het hele gezin verwijderd. Dit kan niet ongedaan worden gemaakt.`,
+      ok: 'Verwijderen', danger: true,
+    });
+    if (!ok) return;
+  } else {
+    closeSheet();
+  }
+  mutate(() => {
+    S.data.lists = S.data.lists.filter((l) => l !== lst);
+    S.data.entries = S.data.entries.filter((e) => e.list_id !== lst.id);
+    if (S.listId === lst.id) { S.listId = S.data.lists[0]?.id ?? null; prefs.set('list', S.listId); }
+    S.overview = true;
+  }, () => S.api.remove('lists', lst.id), 'Verwijderen mislukt');
+  toast(`Lijst “${lst.name}” verwijderd`);
 }
 
 // -- Beheer-acties --
@@ -863,11 +1042,19 @@ const actions = {
 
   tab: (el, ev) => {
     ev.preventDefault();
+    // Nog een keer op "Lijst" tikken = terug naar het overzicht
+    if (el.dataset.tab === 'lijst' && S.tab === 'lijst') S.overview = true;
     S.tab = el.dataset.tab; prefs.set('tab', S.tab);
     render(); window.scrollTo(0, 0);
   },
   sort: (el) => { S.sortMode = el.dataset.mode; prefs.set('sort', S.sortMode); render(); },
   'pick-store': (el) => { S.storeId = el.dataset.id; prefs.set('store', S.storeId); render(); },
+  overview: () => { S.overview = true; S.search = ''; render(); window.scrollTo(0, 0); },
+  'open-list': (el) => { openList(el.dataset.id); window.scrollTo(0, 0); },
+  'pick-list': (el) => openList(el.dataset.id, { overview: S.overview }),
+  'new-list': () => newListSheet(),
+  'edit-list': () => { const l = currentList(); if (l) editListSheet(l); },
+  'from-cart': (el) => { const e = S.data.entries.find((x) => x.id === el.dataset.id); if (e && e.in_cart) fromCart(e); },
 
   'add-item': (el) => {
     const it = S.data.itemsById.get(el.dataset.id);
@@ -967,6 +1154,8 @@ async function boot() {
   if (!configured && !demo) { S.api = { mode: 'none' }; $app.innerHTML = viewNotConfigured(); return; }
 
   S.api = demo ? createDemoApi() : createSupabaseApi(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // Bij het openen altijd eerst het overzicht van de lijstjes
+  S.tab = 'lijst'; S.overview = true;
   if (cacheLoad()) { S.wasMember = true; render(); }
   try {
     await S.api.init();

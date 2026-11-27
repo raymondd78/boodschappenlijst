@@ -11,3 +11,11 @@ psql -q -v ON_ERROR_STOP=1 -d "$DB" -f supabase/setup.sql
 # Tweede keer uitvoeren moet ook goed gaan (script is herhaalbaar)
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f supabase/setup.sql
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f tests/test_schema.sql
+
+# Migratie van versie 1.1 naar 1.2 (lijstjes) op een bestaande database
+DB2=boodschappen_migratie
+dropdb --if-exists "$DB2"
+createdb "$DB2"
+psql -q -v ON_ERROR_STOP=1 -d "$DB2" -f tests/supabase_mock.sql
+psql -q -v ON_ERROR_STOP=1 -d "$DB2" -f tests/setup_v1.1.sql
+psql -q -v ON_ERROR_STOP=1 -d "$DB2" -f tests/test_migratie.sql

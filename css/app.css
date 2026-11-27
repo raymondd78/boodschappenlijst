@@ -218,3 +218,52 @@ label.lbl { display: block; font-size: 14px; color: var(--muted); margin: 12px 2
   display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-left: 4px; padding: 0 5px;
   border-radius: 999px; background: var(--brand); color: var(--brand-ink); font-size: 13px; font-weight: 700;
 }
+
+/* ---------- Lijstjes (versie 1.2) ---------- */
+.list-btns { display: flex; flex-direction: column; gap: 12px; }
+.list-btn {
+  display: flex; align-items: center; gap: 14px; width: 100%; min-height: 76px; padding: 14px 16px;
+  border-radius: 16px; border: 1px solid var(--line); background: var(--card); text-align: left;
+}
+.list-btn.current { border: 2px solid var(--brand); padding: 13px 15px; }
+.list-btn:active { background: var(--brand-soft); }
+.list-ic {
+  width: 44px; height: 44px; flex: none; border-radius: 12px; display: grid; place-items: center;
+  background: var(--line); color: var(--muted);
+}
+.list-btn.current .list-ic { background: var(--brand-soft); color: var(--brand); }
+.list-ic svg { width: 22px; height: 22px; }
+.list-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.list-txt .name { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.list-txt .meta { font-size: 13px; color: var(--muted); }
+.list-btn.current .list-txt .meta { color: var(--brand); font-weight: 500; }
+.list-count {
+  flex: none; min-width: 44px; height: 32px; padding: 0 10px; border-radius: 16px; display: grid; place-items: center;
+  background: var(--brand-soft); color: var(--brand); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.list-btn.current .list-count { background: var(--brand); color: var(--brand-ink); }
+.list-count.empty-count { background: var(--line); color: var(--muted); font-size: 14px; font-weight: 600; }
+
+.back-btn {
+  display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 6px 0 0;
+  border: 0; background: none; color: var(--brand); font-weight: 600; font-size: 16px;
+}
+.list-title { display: flex; align-items: center; gap: 4px; padding: 0 4px; }
+.list-title h1 { font-size: 26px; overflow-wrap: anywhere; }
+.list-sub { padding: 0 6px 10px; font-size: 14px; color: var(--muted); }
+.list-chip b { margin-left: 4px; color: var(--brand); }
+.list-chip[aria-pressed="true"] b { color: var(--brand-ink); }
+
+/* Regel in de kar: blijft op de lijst staan, maar gemarkeerd */
+.row.in-cart { background: var(--brand-soft); }
+.row.in-cart .name { color: var(--muted); text-decoration: line-through; }
+.row.in-cart .qty-badge { opacity: .7; }
+.cart-label { display: block; font-size: 12px; font-weight: 700; color: var(--brand); text-transform: uppercase; letter-spacing: .04em; }
+.tick.on { background: var(--brand); position: relative; margin: 0 2px 0 0; width: 28px; height: 28px; }
+.tick.on::after {
+  content: ""; position: absolute; left: 8px; top: 4px; width: 7px; height: 13px;
+  border: solid var(--brand-ink); border-width: 0 3px 3px 0; transform: rotate(45deg);
+}
+.btn.ghost { border-color: transparent; background: none; color: var(--brand); }
+.btn.outline { border-color: currentColor; }
+.divider { border: 0; border-top: 1px solid var(--line); margin: 18px 0 14px; }

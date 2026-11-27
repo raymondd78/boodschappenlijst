@@ -43,15 +43,16 @@ export function createSupabaseApi(url, key) {
     async removeMember(uid) { check(await sb.from('members').delete().eq('user_id', uid)); },
 
     async loadAll() {
-      const [members, categories, stores, items, positions, entries] = await Promise.all([
+      const [members, categories, stores, lists, items, positions, entries] = await Promise.all([
         sb.from('members').select('*').order('created_at'),
         sb.from('categories').select('*').order('position'),
         sb.from('stores').select('*').order('position'),
+        sb.from('lists').select('*').order('created_at'),
         sb.from('items').select('*'),
         sb.from('item_positions').select('store_id,item_id,pos'),
         sb.from('list_entries').select('*').order('added_at'),
       ]).then((all) => all.map(check));
-      return { members, categories, stores, items, positions, entries };
+      return { members, categories, stores, lists, items, positions, entries };
     },
 
     async insert(table, row) { return check(await sb.from(table).insert(row).select().single()); },
@@ -66,15 +67,15 @@ export function createSupabaseApi(url, key) {
       check(await sb.from('item_positions').delete().eq('store_id', storeId));
     },
 
-    async finishShopping(storeId, positions) {
-      return check(await sb.rpc('finish_shopping', { p_store: storeId, p_positions: positions }));
+    async finishShopping(listId, storeId, positions) {
+      return check(await sb.rpc('finish_shopping', { p_list: listId, p_store: storeId, p_positions: positions }));
     },
 
     /** Roept onChange aan bij elke wijziging in de database (door wie dan ook). */
     subscribe(onChange) {
       if (channel) sb.removeChannel(channel);
       channel = sb.channel('gezin');
-      for (const table of ['members', 'categories', 'stores', 'items', 'item_positions', 'list_entries']) {
+      for (const table of ['members', 'categories', 'stores', 'lists', 'items', 'item_positions', 'list_entries']) {
         channel.on('postgres_changes', { event: '*', schema: 'public', table }, onChange);
       }
       channel.subscribe();
