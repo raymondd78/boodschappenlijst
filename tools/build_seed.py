@@ -13,62 +13,79 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# Looproute Lidl Siersteenlaan, vanaf de ingang. Positie = volgorde.
+# Standaardcategorieën (versie 1.3). Volgorde = startvolgorde van de looproute;
+# daarna leert de app per artikel en per winkel uit het afvinken.
+# De laatste categorie is het vangnet voor alles wat nergens anders past.
 CATEGORIES = [
-    "Groente en fruit",
-    "Brood",
-    "Broodbeleg",
-    "Bakproducten",
-    "Kaas en vleeswaren",
-    "Beschuit, ontbijtkoek e.d.",
-    "Zuivel",
-    "Schoonmaak",
-    "Wc-papier",
-    "Nootjes",
-    "Diepvriesproducten",
-    "Water",
-    "Overig",
+    "Groente & fruit",
+    "Brood & bakkerij",
+    "Vlees, vis & vega",
+    "Zuivel, kaas & eieren",
+    "Ontbijt & beleg",
+    "Voorraadkast",
+    "Snoep, koek & chips",
+    "Dranken",
+    "Diepvries",
+    "Drogisterij & huishouden",
 ]
+FALLBACK = CATEGORIES[-1]
 
 STORES = ["Lidl Siersteenlaan", "Lidl Eikenlaan", "Lidl Hoogkerk"]
 
 # Categorie op de bon -> standaardcategorie in de app
 RECEIPT_MAP = {
-    "Groente": "Groente en fruit",
-    "Fruit": "Groente en fruit",
-    "Brood & gebak": "Brood",
-    "Kaas": "Kaas en vleeswaren",
-    "Vlees, vis & vega": "Kaas en vleeswaren",
-    "Zuivel & eieren": "Zuivel",
-    "Koek, snoep & snacks": "Beschuit, ontbijtkoek e.d.",
-    "Voorraad & ontbijt": "Overig",
-    "Dranken": "Overig",
-    "Non-food": "Overig",
+    "Groente": "Groente & fruit",
+    "Fruit": "Groente & fruit",
+    "Brood & gebak": "Brood & bakkerij",
+    "Kaas": "Zuivel, kaas & eieren",
+    "Vlees, vis & vega": "Vlees, vis & vega",
+    "Zuivel & eieren": "Zuivel, kaas & eieren",
+    "Koek, snoep & snacks": "Snoep, koek & chips",
+    "Voorraad & ontbijt": "Voorraadkast",
+    "Dranken": "Dranken",
+    "Non-food": "Drogisterij & huishouden",
 }
 
 # Uitzonderingen per artikel
 OVERRIDES = {
-    "Blauwe bessen (diepvries)": "Diepvriesproducten",
-    "Spinazie deelblokjes": "Diepvriesproducten",
-    "Vers bladerdeeg": "Bakproducten",
-    "Aardbeienjam": "Broodbeleg",
-    "Pindakaas Creamy": "Broodbeleg",
-    "Pindakaas": "Broodbeleg",
-    "Pindakaas 100%": "Broodbeleg",
-    "Schenkstroop": "Broodbeleg",
-    "Pannenkoekmix meergranen": "Bakproducten",
-    "Kristalsuiker": "Bakproducten",
-    "Poedersuiker": "Bakproducten",
-    "Amandelschaafsel": "Bakproducten",
-    "Taartvulling": "Bakproducten",
-    "Biologische rozijnen": "Bakproducten",
-    "Premium muesli": "Beschuit, ontbijtkoek e.d.",
-    "Notenmix": "Nootjes",
-    "Notenmelange royal mix": "Nootjes",
-    "Chips paprika XXL": "Nootjes",
-    "Toiletpapier recycled": "Wc-papier",
-    "Keukenpapier 3-laags": "Schoonmaak",
-    "Mineraalwater 1,5L bruisend": "Water",
+    # vleeswaren en verse maaltijden uit de koeling
+    "Schouderham": "Zuivel, kaas & eieren",
+    "Fuet extra": "Zuivel, kaas & eieren",
+    "Filet americain": "Zuivel, kaas & eieren",
+    "Vegan paté": "Zuivel, kaas & eieren",
+    "Sushi": "Zuivel, kaas & eieren",
+    # ontbijt en beleg
+    "Aardbeienjam": "Ontbijt & beleg",
+    "Pindakaas Creamy": "Ontbijt & beleg",
+    "Pindakaas": "Ontbijt & beleg",
+    "Pindakaas 100%": "Ontbijt & beleg",
+    "Premium muesli": "Ontbijt & beleg",
+    "Beschuit naturel": "Ontbijt & beleg",
+    "Ontbijtkoek ongesneden": "Ontbijt & beleg",
+    "Kandij-/gemberkoek": "Ontbijt & beleg",
+    "Clipper groene thee lemon": "Ontbijt & beleg",
+    "Clipper thee lemon & ginger": "Ontbijt & beleg",
+    # diepvries
+    "Blauwe bessen (diepvries)": "Diepvries",
+    "Spinazie deelblokjes": "Diepvries",
+}
+
+# Oude startcategorieën (tot en met versie 1.2) -> nieuwe, voor de migratie van
+# artikelen die niet in de startdata voorkomen (zelf toegevoegd)
+OLD_TO_NEW = {
+    "Groente en fruit": "Groente & fruit",
+    "Brood": "Brood & bakkerij",
+    "Broodbeleg": "Ontbijt & beleg",
+    "Bakproducten": "Voorraadkast",
+    "Kaas en vleeswaren": "Zuivel, kaas & eieren",
+    "Beschuit, ontbijtkoek e.d.": "Ontbijt & beleg",
+    "Zuivel": "Zuivel, kaas & eieren",
+    "Schoonmaak": "Drogisterij & huishouden",
+    "Wc-papier": "Drogisterij & huishouden",
+    "Nootjes": "Snoep, koek & chips",
+    "Diepvriesproducten": "Diepvries",
+    "Water": "Dranken",
+    "Overig": "Drogisterij & huishouden",
 }
 
 # Niet als artikel overnemen
@@ -259,6 +276,18 @@ def q(s):
     return "'" + s.replace("'", "''") + "'"
 
 
+def write_migration(seed_sql):
+    """Migratie naar de 10 categorieën (versie 1.3) voor een bestaande database."""
+    new_vals = ",\n".join(f"    ({q(c)}, {i + 1})" for i, c in enumerate(CATEGORIES))
+    old_vals = ",\n".join(f"    ({q(o)}, {q(n)})" for o, n in OLD_TO_NEW.items())
+    body = MIGRATION_TEMPLATE.format(seed="\n".join(seed_sql), new_vals=new_vals,
+                                     old_vals=old_vals, fallback=q(FALLBACK), n=len(CATEGORIES))
+    (ROOT / "supabase" / "migraties" / "2026-11-27_categorieen.sql").write_text(body, encoding="utf-8")
+
+
+MIGRATION_TEMPLATE = (ROOT / "tools" / "migratie_categorieen.sql.tpl").read_text(encoding="utf-8")
+
+
 def main():
     items = load_items()
     sql = [
@@ -294,6 +323,7 @@ def main():
         + schema + "\n\n" + "\n".join(sql),
         encoding="utf-8",
     )
+    write_migration(sql)
     print(f"{len(CATEGORIES)} categorieën, {len(STORES)} winkels, {len(items)} artikelen")
 
 

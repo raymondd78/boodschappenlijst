@@ -1,0 +1,286 @@
+-- Versie 1.3: nieuwe standaardlijst van 10 categorieën.
+-- (gegenereerd door tools/build_seed.py — niet met de hand wijzigen)
+--
+-- Eén keer uitvoeren in de Supabase SQL Editor (bestaande database, na versie 1.2).
+-- Per gezin dat nog de oude startcategorieën heeft:
+--   * de 10 nieuwe categorieën komen erbij, in de volgorde van de looproute;
+--   * artikelen uit de startdata krijgen hun nieuwe categorie, zelf toegevoegde
+--     artikelen gaan van hun oude naar de bijpassende nieuwe categorie;
+--   * zelf aangemaakte categorieën blijven bestaan (vóór het vangnet);
+--   * de oude startcategorieën verdwijnen;
+--   * de geleerde winkelvolgorde wordt gewist (die was op de oude indeling
+--     gebaseerd); de app leert hem opnieuw bij het afvinken.
+-- Het script is opnieuw uit te voeren: gezinnen die al over zijn, blijven ongemoeid.
+
+-- 1. Startdata voor nieuwe gezinnen bijwerken
+-- Startdata (gegenereerd door tools/build_seed.py — niet met de hand wijzigen)
+-- Bron: 14 Lidl-bonnen aug–nov 2026. Wordt gekopieerd naar elk nieuw gezin.
+
+truncate public.tpl_categories, public.tpl_stores, public.tpl_items;
+
+insert into public.tpl_categories (name, position) values
+  ('Groente & fruit', 1),
+  ('Brood & bakkerij', 2),
+  ('Vlees, vis & vega', 3),
+  ('Zuivel, kaas & eieren', 4),
+  ('Ontbijt & beleg', 5),
+  ('Voorraadkast', 6),
+  ('Snoep, koek & chips', 7),
+  ('Dranken', 8),
+  ('Diepvries', 9),
+  ('Drogisterij & huishouden', 10);
+
+insert into public.tpl_stores (name, position) values
+  ('Lidl Siersteenlaan', 1),
+  ('Lidl Eikenlaan', 2),
+  ('Lidl Hoogkerk', 3);
+
+insert into public.tpl_items (name, category, use_count) values
+  ('Soja yoghurt', 'Zuivel, kaas & eieren', 9),
+  ('Schouderham', 'Zuivel, kaas & eieren', 9),
+  ('Magere kwark 1kg', 'Zuivel, kaas & eieren', 9),
+  ('Scharreleieren 12st', 'Zuivel, kaas & eieren', 8),
+  ('Halvarine', 'Zuivel, kaas & eieren', 7),
+  ('Geitenkaas extra oud', 'Zuivel, kaas & eieren', 6),
+  ('Geitenkaas belegen (per kg)', 'Zuivel, kaas & eieren', 6),
+  ('Sperziebonen', 'Groente & fruit', 6),
+  ('Belegen plakken', 'Zuivel, kaas & eieren', 6),
+  ('Kandij-/gemberkoek', 'Ontbijt & beleg', 6),
+  ('Aardbeienjam', 'Ontbijt & beleg', 5),
+  ('Komkommer', 'Groente & fruit', 5),
+  ('Vegan kruidenkaas', 'Zuivel, kaas & eieren', 5),
+  ('Wortels', 'Groente & fruit', 5),
+  ('Bananen', 'Groente & fruit', 5),
+  ('Mini krieltjes BBQ', 'Groente & fruit', 5),
+  ('Mineraalwater 1,5L bruisend', 'Dranken', 4),
+  ('Kaiserbroodje (bake-off)', 'Brood & bakkerij', 4),
+  ('Vers bladerdeeg', 'Brood & bakkerij', 4),
+  ('Bio haverdrink', 'Zuivel, kaas & eieren', 4),
+  ('Gevulde koek', 'Snoep, koek & chips', 4),
+  ('Handsinaasappels', 'Groente & fruit', 4),
+  ('Ontbijtspek rond', 'Vlees, vis & vega', 4),
+  ('Paprika mix', 'Groente & fruit', 4),
+  ('Tomatenblokjes', 'Voorraadkast', 3),
+  ('Pannenkoekmix meergranen', 'Voorraadkast', 3),
+  ('Saucijzenbroodje', 'Brood & bakkerij', 3),
+  ('Cocktailgarnalen', 'Vlees, vis & vega', 3),
+  ('Pistolet', 'Brood & bakkerij', 3),
+  ('Wraps 8x20cm', 'Brood & bakkerij', 3),
+  ('Aardappelen iets kruimig', 'Groente & fruit', 3),
+  ('Appels Elstar (tas)', 'Groente & fruit', 3),
+  ('Beschuit naturel', 'Ontbijt & beleg', 3),
+  ('Biscuits duo''s vanille', 'Snoep, koek & chips', 3),
+  ('Fuet extra', 'Zuivel, kaas & eieren', 3),
+  ('Geitenkaas schijf naturel', 'Zuivel, kaas & eieren', 3),
+  ('IJsbergsla', 'Groente & fruit', 3),
+  ('Kokosyoghurt', 'Zuivel, kaas & eieren', 3),
+  ('Lente-ui', 'Groente & fruit', 3),
+  ('Mandarijnen', 'Groente & fruit', 3),
+  ('Mini crackers', 'Snoep, koek & chips', 3),
+  ('Ontbijtkoek ongesneden', 'Ontbijt & beleg', 3),
+  ('Toiletpapier recycled', 'Drogisterij & huishouden', 3),
+  ('Trostomaten', 'Groente & fruit', 3),
+  ('Vlugge Japie', 'Snoep, koek & chips', 3),
+  ('Kidneybonen', 'Voorraadkast', 2),
+  ('Mais extra zoet', 'Voorraadkast', 2),
+  ('Spinazie gewassen', 'Groente & fruit', 2),
+  ('Tomato frito', 'Voorraadkast', 2),
+  ('Zuurkool naturel', 'Voorraadkast', 2),
+  ('Bio flespompoen', 'Groente & fruit', 2),
+  ('Broccoli', 'Groente & fruit', 2),
+  ('Feta', 'Zuivel, kaas & eieren', 2),
+  ('Pindakaas Creamy', 'Ontbijt & beleg', 2),
+  ('Schnittbroodje wit', 'Brood & bakkerij', 2),
+  ('Vegan kipkrokante schnitzel', 'Vlees, vis & vega', 2),
+  ('Walnoten honingbroodje', 'Brood & bakkerij', 2),
+  ('Witlof', 'Groente & fruit', 2),
+  ('Wraps naturel', 'Brood & bakkerij', 2),
+  ('Augurken minder zout', 'Voorraadkast', 2),
+  ('Bio maiswafels', 'Snoep, koek & chips', 2),
+  ('Chips paprika XXL', 'Snoep, koek & chips', 2),
+  ('Crackers luchtig', 'Snoep, koek & chips', 2),
+  ('Frikandelbroodje XXL', 'Brood & bakkerij', 2),
+  ('Gember', 'Groente & fruit', 2),
+  ('Gouda belegen stuk', 'Zuivel, kaas & eieren', 2),
+  ('Kastanjechampignons', 'Groente & fruit', 2),
+  ('Kropsla met kluit', 'Groente & fruit', 2),
+  ('Magere Franse kwark', 'Zuivel, kaas & eieren', 2),
+  ('Multi Color sla', 'Groente & fruit', 2),
+  ('Notenmix', 'Snoep, koek & chips', 2),
+  ('PL kipstukjes HME', 'Vlees, vis & vega', 2),
+  ('Partysauzen', 'Voorraadkast', 2),
+  ('Peulen / sugar snaps', 'Groente & fruit', 2),
+  ('Prei', 'Groente & fruit', 2),
+  ('Premium muesli', 'Ontbijt & beleg', 2),
+  ('Rucola sla', 'Groente & fruit', 2),
+  ('Uien geel 1kg', 'Groente & fruit', 2),
+  ('Vega balletjes', 'Vlees, vis & vega', 2),
+  ('Vega kipreepjes', 'Vlees, vis & vega', 2),
+  ('Verse boerenfriet', 'Groente & fruit', 2),
+  ('Verse halfvolle melk', 'Zuivel, kaas & eieren', 2),
+  ('Way to Go vegan rasp', 'Zuivel, kaas & eieren', 2),
+  ('Zalmfilet zonder huid', 'Vlees, vis & vega', 2),
+  ('Druivensap', 'Dranken', 1),
+  ('Bio zuurkool met kruiden', 'Voorraadkast', 1),
+  ('Amaryllisbol', 'Drogisterij & huishouden', 1),
+  ('Aubergine', 'Groente & fruit', 1),
+  ('Azijn', 'Voorraadkast', 1),
+  ('Boerenkool', 'Groente & fruit', 1),
+  ('Cherrytomaten', 'Groente & fruit', 1),
+  ('Kamerplantenmix (potgrond)', 'Drogisterij & huishouden', 1),
+  ('Pitabroodjes', 'Brood & bakkerij', 1),
+  ('Unox Gelderse rookworst', 'Vlees, vis & vega', 1),
+  ('Volkorenbol', 'Brood & bakkerij', 1),
+  ('Amandelschaafsel', 'Voorraadkast', 1),
+  ('Bio aardappel vastkokend', 'Groente & fruit', 1),
+  ('Bio kikkererwten', 'Voorraadkast', 1),
+  ('Bio sojadrink ongezoet', 'Zuivel, kaas & eieren', 1),
+  ('Bio tofu', 'Vlees, vis & vega', 1),
+  ('Biologische rozijnen', 'Voorraadkast', 1),
+  ('Blauwe bessen (diepvries)', 'Diepvries', 1),
+  ('Bockworst', 'Vlees, vis & vega', 1),
+  ('Bolletje schuddebuikjes', 'Snoep, koek & chips', 1),
+  ('Braadworsten XXL', 'Vlees, vis & vega', 1),
+  ('Churros', 'Brood & bakkerij', 1),
+  ('Citroenen', 'Groente & fruit', 1),
+  ('Clipper groene thee lemon', 'Ontbijt & beleg', 1),
+  ('Clipper thee lemon & ginger', 'Ontbijt & beleg', 1),
+  ('Courgette', 'Groente & fruit', 1),
+  ('Digestives naturel', 'Snoep, koek & chips', 1),
+  ('Filet americain', 'Zuivel, kaas & eieren', 1),
+  ('Frambozen', 'Groente & fruit', 1),
+  ('Frans stokbrood', 'Brood & bakkerij', 1),
+  ('Geitenkaas stuk (per kg)', 'Zuivel, kaas & eieren', 1),
+  ('Gemarineerde BBQ worst', 'Vlees, vis & vega', 1),
+  ('Gevriesdroogde kruiden', 'Voorraadkast', 1),
+  ('Grapefruit', 'Groente & fruit', 1),
+  ('Groentebouillonblokjes', 'Voorraadkast', 1),
+  ('Hollandse aardbeien', 'Groente & fruit', 1),
+  ('Ibuprofen gel', 'Drogisterij & huishouden', 1),
+  ('Keukenmargarine 80%', 'Zuivel, kaas & eieren', 1),
+  ('Keukenpapier 3-laags', 'Drogisterij & huishouden', 1),
+  ('Kikkererwten', 'Voorraadkast', 1),
+  ('Knoflook', 'Groente & fruit', 1),
+  ('Kristalsuiker', 'Voorraadkast', 1),
+  ('Limoenen', 'Groente & fruit', 1),
+  ('Mango', 'Groente & fruit', 1),
+  ('Notenmelange royal mix', 'Snoep, koek & chips', 1),
+  ('PL chocoladevla', 'Zuivel, kaas & eieren', 1),
+  ('PL verse burger', 'Vlees, vis & vega', 1),
+  ('Paksoi', 'Groente & fruit', 1),
+  ('Peren Conference', 'Groente & fruit', 1),
+  ('Pindakaas', 'Ontbijt & beleg', 1),
+  ('Pindakaas 100%', 'Ontbijt & beleg', 1),
+  ('Poedersuiker', 'Voorraadkast', 1),
+  ('Premium angus burger', 'Vlees, vis & vega', 1),
+  ('Rijstnoedels mihoen', 'Voorraadkast', 1),
+  ('Roze koeken XXL', 'Snoep, koek & chips', 1),
+  ('Schenkstroop', 'Voorraadkast', 1),
+  ('Sinaasappelsap 100%', 'Dranken', 1),
+  ('Snackradijs', 'Groente & fruit', 1),
+  ('Snacktomaten mix', 'Groente & fruit', 1),
+  ('Snoeptomaten rood', 'Groente & fruit', 1),
+  ('Speculaasbrokken', 'Snoep, koek & chips', 1),
+  ('Spekreepjes', 'Vlees, vis & vega', 1),
+  ('Spinazie deelblokjes', 'Diepvries', 1),
+  ('Sushi', 'Zuivel, kaas & eieren', 1),
+  ('Taartvulling', 'Voorraadkast', 1),
+  ('Tijm', 'Groente & fruit', 1),
+  ('Tortilla wraps XXL', 'Brood & bakkerij', 1),
+  ('Uienpoeder', 'Voorraadkast', 1),
+  ('Vanillestokjes', 'Snoep, koek & chips', 1),
+  ('Vega shoarma 300g', 'Vlees, vis & vega', 1),
+  ('Vegan paté', 'Zuivel, kaas & eieren', 1),
+  ('Vegan pesto', 'Voorraadkast', 1),
+  ('Vegetarische focaccia', 'Brood & bakkerij', 1),
+  ('Vloeibare margarine', 'Zuivel, kaas & eieren', 1),
+  ('Waspeen', 'Groente & fruit', 1),
+  ('Witte champignons', 'Groente & fruit', 1),
+  ('Zoete aardappel', 'Groente & fruit', 1),
+  ('Zongedroogde tomaten', 'Voorraadkast', 1);
+
+
+-- 2. Bestaande gezinnen omzetten
+do $$
+declare
+  fam record;
+  fallback text := 'Drogisterij & huishouden';
+begin
+  create temp table mig_new (name text primary key, position integer) on commit drop;
+  insert into mig_new values
+    ('Groente & fruit', 1),
+    ('Brood & bakkerij', 2),
+    ('Vlees, vis & vega', 3),
+    ('Zuivel, kaas & eieren', 4),
+    ('Ontbijt & beleg', 5),
+    ('Voorraadkast', 6),
+    ('Snoep, koek & chips', 7),
+    ('Dranken', 8),
+    ('Diepvries', 9),
+    ('Drogisterij & huishouden', 10);
+  create temp table mig_old (old_name text primary key, new_name text) on commit drop;
+  insert into mig_old values
+    ('Groente en fruit', 'Groente & fruit'),
+    ('Brood', 'Brood & bakkerij'),
+    ('Broodbeleg', 'Ontbijt & beleg'),
+    ('Bakproducten', 'Voorraadkast'),
+    ('Kaas en vleeswaren', 'Zuivel, kaas & eieren'),
+    ('Beschuit, ontbijtkoek e.d.', 'Ontbijt & beleg'),
+    ('Zuivel', 'Zuivel, kaas & eieren'),
+    ('Schoonmaak', 'Drogisterij & huishouden'),
+    ('Wc-papier', 'Drogisterij & huishouden'),
+    ('Nootjes', 'Snoep, koek & chips'),
+    ('Diepvriesproducten', 'Diepvries'),
+    ('Water', 'Dranken'),
+    ('Overig', 'Drogisterij & huishouden');
+
+  for fam in
+    select distinct c.family_id as id from public.categories c
+    join mig_old o on lower(o.old_name) = lower(c.name)
+    where lower(c.name) not in (select lower(name) from mig_new)
+  loop
+    -- nieuwe categorieën toevoegen (bestaat de naam al, dan die gebruiken)
+    insert into public.categories (family_id, name, position)
+      select fam.id, n.name, n.position from mig_new n
+      where not exists (select 1 from public.categories c
+                        where c.family_id = fam.id and lower(c.name) = lower(n.name));
+
+    -- artikelen uit de startdata: categorie volgens de nieuwe startdata
+    update public.items i set category_id = nc.id
+      from public.tpl_items t
+      join public.categories nc on nc.family_id = fam.id and lower(nc.name) = lower(t.category)
+      where i.family_id = fam.id and lower(i.name) = lower(t.name)
+        and (i.category_id is null or i.category_id in (
+          select c.id from public.categories c join mig_old o on lower(o.old_name) = lower(c.name)
+          where c.family_id = fam.id));
+
+    -- overige artikelen in een oude categorie: naar de bijpassende nieuwe
+    update public.items i set category_id = nc.id
+      from public.categories oc
+      join mig_old o on lower(o.old_name) = lower(oc.name)
+      join public.categories nc on nc.family_id = fam.id and lower(nc.name) = lower(o.new_name)
+      where oc.family_id = fam.id and i.category_id = oc.id;
+
+    -- oude startcategorieën weg
+    delete from public.categories c using mig_old o
+      where c.family_id = fam.id and lower(c.name) = lower(o.old_name)
+        and lower(c.name) not in (select lower(name) from mig_new);
+
+    -- volgorde: nieuwe categorieën, dan eigen categorieën, vangnet als laatste
+    with ordered as (
+      select c.id, row_number() over (order by
+               case when lower(c.name) = lower(fallback) then 3
+                    when n.name is not null then 1 else 2 end,
+               n.position, c.position, c.name) as pos
+      from public.categories c
+      left join mig_new n on lower(n.name) = lower(c.name)
+      where c.family_id = fam.id)
+    update public.categories c set position = o.pos from ordered o where o.id = c.id;
+
+    -- geleerde volgorde hoorde bij de oude indeling
+    delete from public.item_positions p using public.stores s
+      where p.store_id = s.id and s.family_id = fam.id;
+
+    raise notice 'Gezin % omgezet naar de nieuwe categorieën', fam.id;
+  end loop;
+end $$;

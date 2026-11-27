@@ -244,9 +244,9 @@ end $$;
 create or replace function public.approve_member(p_user uuid)
 returns void language plpgsql security definer set search_path = public as $$
 begin
-  if not exists (select 1 from public.members
-                 where user_id = auth.uid() and is_starter and status = 'approved') then
-    raise exception 'Alleen de starter van het gezin kan leden goedkeuren';
+  -- Versie 1.3: elk goedgekeurd gezinslid mag wachtende leden goedkeuren
+  if public.my_family() is null then
+    raise exception 'Alleen goedgekeurde gezinsleden kunnen leden goedkeuren';
   end if;
   update public.members set status = 'approved'
     where user_id = p_user and family_id = public.my_family() and status = 'pending';

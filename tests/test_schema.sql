@@ -18,6 +18,7 @@ end $$;
 \set A '''aaaaaaaa-0000-0000-0000-000000000001'''
 \set B '''bbbbbbbb-0000-0000-0000-000000000002'''
 \set C '''cccccccc-0000-0000-0000-000000000003'''
+\set D '''dddddddd-0000-0000-0000-000000000004'''
 
 set role authenticated;
 
@@ -26,7 +27,7 @@ select pg_temp.as_user(:A);
 select code as fam_code from public.create_family('Raymond') \gset
 select pg_temp.check(:'fam_code' ~ '^[A-Z]{4}$', 'gezinscode heeft 4 letters: ' || :'fam_code');
 select set_config('test.fam_a', id::text, false) from families;
-select pg_temp.check((select count(*) from categories) = 13, '13 startcategorieën');
+select pg_temp.check((select count(*) from categories) = 10, '10 startcategorieën');
 select pg_temp.check((select count(*) from stores) = 3, '3 startwinkels');
 select pg_temp.check((select count(*) from items) = 162, '162 startartikelen');
 select pg_temp.check((select count(*) from items where category_id is null) = 0, 'alle artikelen hebben een categorie');
@@ -88,6 +89,15 @@ select pg_temp.check((select count(*) from members where status = 'pending') = 1
 select public.approve_member(:B);
 select pg_temp.as_user(:B);
 select pg_temp.check((select count(*) from items) = 162, 'goedgekeurd lid ziet artikelen');
+
+-- Versie 1.3: ook een gewoon (niet-starter) lid mag goedkeuren
+select pg_temp.as_user(:D);
+select public.join_family(:'fam_code', 'Daan') is not null as d_joined \gset
+select pg_temp.as_user(:B);
+select pg_temp.check(not (select is_starter from members where user_id = :B), 'B is geen starter');
+select public.approve_member(:D);
+select pg_temp.check((select status from members where user_id = :D) = 'approved', 'niet-starter B keurt D goed');
+delete from members where user_id = :D;
 
 -- C start eigen gezin en ziet niets van gezin A
 select pg_temp.as_user(:C);

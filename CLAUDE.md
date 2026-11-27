@@ -21,14 +21,15 @@ Communicatie, UI-teksten en documentatie in het Nederlands.
 - Looproute: `item_positions` per winkel; zonder geleerde positie `categorie.position * 1000 + 500`. Leren in `js/order.js` (`learnPositions`, langste stijgende deelrij).
 - Aantal per lijstregel: `list_entries.qty` (1–99). Lijst: − / + stepper (− bij 1 = verwijderen), opnieuw toevoegen = +1. Winkel en kar: `N×` achter de naam alleen bij ≥ 2; afvinken = hele aantal. Migraties voor bestaande databases in `supabase/migraties/`.
 - Lijstjes (versie 1.2): tabel `lists` (naam uniek per gezin, hoofdletterongevoelig); `list_entries.list_id` (artikel één keer per lijst). Trigger `list_entries_check_list` controleert dat de lijst bij het gezin hoort en zet regels zonder lijst (oude app) in de oudste lijst. `finish_shopping(p_list, p_store, p_positions)` leegt alleen de kar van die lijst; de oude 2-argumentversie leegt alle karren. UI: `S.listId` (laatst geopend, `prefs`), `S.overview`; app opent altijd op het overzicht; dubbele naam → `uniqueListName` zet "(2)" erachter; minstens één lijst blijft; regels in de kar blijven zichtbaar op de lijst (`cartRow`) en tellen mee.
+- Versie 1.3: `approve_member` mag door elk goedgekeurd lid. 10 standaardcategorieën (laatste = vangnet "Drogisterij & huishouden"; `fallbackCategory()` in de app, ook "Overig" voor oude gezinnen). Migratie `2026-11-27_categorieen.sql` wordt gegenereerd uit `tools/migratie_categorieen.sql.tpl` door `build_seed.py`. Afvinken zonder internet: `cartWrite()` → wachtrij `bl-queue-<mode>` in localStorage, `flushQueue()` in volgorde vóór elke `refresh()` en vóór Klaar; `applyQueue()` legt niet-verstuurde wijzigingen over verse data. Wake Lock op het tabblad Winkelen (`syncWakeLock`), `navigator.vibrate` bij afvinken, delen via `navigator.share` (anders klembord).
 - Startdata: `tools/build_seed.py` → `supabase/seed.sql`, `supabase/setup.sql`, `js/seed.js`.
 
 ## Na elke wijziging
 
 - `CACHE` in `sw.js` en `VERSION` in `js/app.js` ophogen.
-- Tests: `node tests/test_order.mjs`, `tests/run_sql_tests.sh` (PostgreSQL 16; test ook de migratie vanaf `tests/setup_v1.1.sql`), `tests/ui_test.mjs` (headless Chrome).
+- Tests: `node tests/test_order.mjs`, `tests/run_sql_tests.sh` (PostgreSQL 16; test ook de migratie vanaf `tests/setup_v1.1.sql`), `tests/ui_test.mjs` (headless Chrome, demomodus via `?demo`; server: `python3 -m http.server 8765`).
 - Schemawijziging: `schema.sql` aanpassen, `python3 tools/build_seed.py` draaien, en de wijziging ook als los migratiescript aanbieden voor de bestaande database.
 
 ## Genomen beslissingen
 
-Zie de projectdocumentatie in claude.ai (`claude/CLAUDE.md`). Kort: zelf bouwen; GitHub + Supabase; Android, geen accounts; gezinscode van 4 letters met goedkeuring door de starter; meerdere winkels met geleerde volgorde; sorteren per categorie of winkelvolgorde; afvinken → kar (terug te zetten), "Klaar" leegt de kar; één notitie per artikel; iedereen beheert; badge voor wachtende leden; 12 Lidl-categorieën + Overig.
+Zie de projectdocumentatie in claude.ai (`claude/CLAUDE.md`). Kort: zelf bouwen; GitHub + Supabase; Android, geen accounts; gezinscode van 4 letters met goedkeuring door een gezinslid; meerdere winkels met geleerde volgorde; sorteren per categorie of winkelvolgorde; afvinken → kar (terug te zetten), "Klaar" leegt de kar; één notitie per artikel; iedereen beheert; badge voor wachtende leden; 10 standaardcategorieën (vanaf 1.3).

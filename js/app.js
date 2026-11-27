@@ -4,7 +4,7 @@ import { createSupabaseApi } from './api-supabase.js';
 import { createDemoApi } from './api-demo.js';
 import { sortByStore, groupByCategory, effectivePosition, learnPositions } from './order.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const $app = document.getElementById('app');
 const $sheet = document.getElementById('sheet-root');
 const $toast = document.getElementById('toast-root');
@@ -33,6 +33,7 @@ const ICON = {
   pencil: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   back: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   plus: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  share: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg>',
 };
 
@@ -112,7 +113,12 @@ function shortDate(iso) {
   return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
 }
 const pendingMembers = () => (S.data?.members || []).filter((m) => m.status === 'pending');
-const overigCategory = () => S.data.categories.find((c) => norm(c.name) === 'overig');
+/** Vangnetcategorie voor wat nergens anders past: "Overig" (oud), anders "Drogisterij & huishouden", anders de laatste */
+const FALLBACK_NAMES = ['overig', 'drogisterij & huishouden'];
+const fallbackCategory = () => {
+  for (const n of FALLBACK_NAMES) { const c = S.data.categories.find((x) => norm(x.name) === n); if (c) return c; }
+  return S.data.categories[S.data.categories.length - 1];
+};
 const storeName = (id) => S.data.stores.find((s) => s.id === id)?.name ?? '';
 
 // ---------- Cache (laatst bekende lijst, ook zonder verbinding) ----------
@@ -150,6 +156,8 @@ async function refresh() {
   if (pendingWrites > 0) return scheduleRefresh(400);
   const seq = writeSeq;
   try {
+    if (!navigator.onLine) throw new Error('Geen verbinding');
+    if (queue.length && !(await flushQueue())) throw new Error('Geen verbinding (wachtrij)');
     const m = await S.api.membership();
     const raw = m && m.member.status === 'approved' ? await S.api.loadAll() : null;
     // Tijdens het ophalen iets gewijzigd? Dan is dit resultaat verouderd.
@@ -157,7 +165,7 @@ async function refresh() {
     if (S.wasMember && !m) toast('Je bent geen lid meer van dit gezin');
     S.membership = m;
     S.wasMember = !!raw;
-    if (raw) setData(raw); else S.data = null;
+    if (raw) { applyQueue(raw.entries); setData(raw); } else S.data = null;
     S.offline = false;
     cacheSave();
   } catch (e) {
@@ -184,6 +192,144 @@ async function mutate(local, remote, errorText) {
   }
 }
 
+// ---------- Telefoonfuncties: trillen, scherm aan, delen ----------
+
+/** Korte trilling als bevestiging (doet niets als het toestel het niet kan) */
+function vibrate(ms = 30) { try { navigator.vibrate?.(ms); } catch { /* niet ondersteund */ } }
+
+// Scherm aan houden zolang het tabblad Winkelen open is
+let wakeLock = null;
+async function syncWakeLock() {
+  const want = S.tab === 'winkelen' && !document.hidden && !!S.data;
+  try {
+    if (want && !wakeLock && 'wakeLock' in navigator) {
+      wakeLock = 'pending';
+      const lock = await navigator.wakeLock.request('screen');
+      wakeLock = lock;
+      lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+      if (!(S.tab === 'winkelen' && !document.hidden)) { wakeLock = null; lock.release(); }
+    } else if (!want && wakeLock && wakeLock !== 'pending') {
+      const lock = wakeLock; wakeLock = null; await lock.release();
+    }
+  } catch (e) {
+    if (wakeLock === 'pending') wakeLock = null;
+    console.warn('Scherm aan houden lukt niet:', e?.message || e);
+  }
+}
+
+/** Tekstversie van de lijst (zonder wat al in de kar ligt), in de gekozen sortering */
+function listAsText(lst) {
+  const entries = entriesOf(lst.id).filter((e) => !e.in_cart);
+  const line = (it) => {
+    const e = S.data.entries.find((x) => x.list_id === lst.id && x.item_id === it.id);
+    return `- ${it.name}${qtyOf(e) > 1 ? ` (${qtyOf(e)}×)` : ''}${e.note ? ` – ${e.note}` : ''}`;
+  };
+  const items = entries.map((e) => S.data.itemsById.get(e.item_id));
+  let body;
+  if (S.sortMode === 'winkel') {
+    body = sortByStore(items, S.storeId, S.data.positions, S.data.catsById).map(line).join('\n');
+  } else {
+    body = groupByCategory(items, S.data.catsById)
+      .map((g) => `${g.category?.name ?? 'Zonder categorie'}\n${g.items.map(line).join('\n')}`).join('\n\n');
+  }
+  return `${lst.name}\n\n${body}`;
+}
+
+async function shareList() {
+  const lst = currentList();
+  if (!lst) return;
+  if (!entriesOf(lst.id).some((e) => !e.in_cart)) return toast('Er staat nog niets op de lijst om te delen');
+  const text = listAsText(lst);
+  try {
+    if (navigator.share) { await navigator.share({ title: lst.name, text }); return; }
+  } catch (e) {
+    if (e?.name === 'AbortError') return;   // zelf geannuleerd
+  }
+  try { await navigator.clipboard.writeText(text); toast('Lijst gekopieerd. Plak hem in bijv. WhatsApp.'); }
+  catch { toast('Delen lukt niet op dit toestel', { error: true }); }
+}
+
+// ---------- Afvinken zonder internet (wachtrij) ----------
+// In de winkel valt het bereik soms weg. Afvinken en terugzetten gaan dan in een
+// wachtrij op het toestel en worden in volgorde verstuurd zodra er weer verbinding is.
+// Zo blijft ook de afvinkvolgorde (voor het leren van de looproute) bewaard.
+
+const queueKey = () => 'bl-queue-' + (S.api?.mode || 'x');
+let queue = [];
+let flushing = null;
+
+function queueLoad() { try { queue = JSON.parse(localStorage.getItem(queueKey())) || []; } catch { queue = []; } }
+function queueSave() { try { localStorage.setItem(queueKey(), JSON.stringify(queue)); } catch { /* vol */ } }
+
+/** Lijkt de fout op "geen verbinding" (en niet op een weigering door de database)? */
+const isNetworkError = (e) => !navigator.onLine || /failed to fetch|networkerror|network request failed|load failed|fetch/i.test(String(e?.message || e));
+
+function enqueue(entryId, patch) {
+  // Meerdere tikken op hetzelfde artikel: alleen de laatste toestand telt, maar op de plek van die laatste tik
+  queue = queue.filter((q) => q.id !== entryId);
+  queue.push({ id: entryId, patch, at: nowIso() });
+  queueSave();
+}
+
+/** Wachtrij in volgorde versturen. Geeft false als het (nog) niet lukt. */
+function flushQueue() {
+  if (flushing) return flushing;
+  flushing = (async () => {
+    try {
+      while (queue.length) {
+        const q = queue[0];
+        try {
+          await S.api.update('list_entries', q.id, q.patch);
+        } catch (e) {
+          if (isNetworkError(e)) return false;
+          console.warn('Wachtrij: wijziging overgeslagen', e);   // bijv. regel intussen verwijderd
+        }
+        queue.shift();
+        queueSave();
+      }
+      return true;
+    } finally { flushing = null; }
+  })();
+  return flushing;
+}
+
+/** Nog niet verstuurde wijzigingen over vers opgehaalde data leggen, zodat niets terugspringt. */
+function applyQueue(entries) {
+  for (const q of queue) {
+    const e = entries.find((x) => x.id === q.id);
+    if (!e) continue;
+    Object.assign(e, q.patch);
+    if (q.patch.in_cart) e.cart_at = q.at; else if (q.patch.in_cart === false) { e.cart_at = null; e.cart_store_id = null; }
+  }
+}
+
+/** Afvinken/terugzetten: lukt ook zonder verbinding. */
+function cartWrite(entry, patch) {
+  writeSeq++;
+  reindex(); render(); cacheSave();
+  if (String(entry.id).startsWith('tmp-')) {
+    // nog niet opgeslagen regel: wacht tot hij een echte id heeft
+    return mutate(null, async () => { await waitForId(entry); await S.api.update('list_entries', entry.id, patch); }, 'Afvinken mislukt');
+  }
+  if (queue.length || S.offline || !navigator.onLine) {
+    enqueue(entry.id, patch);
+    render(); cacheSave();
+    if (navigator.onLine) flushQueue().then((ok) => { if (ok) scheduleRefresh(150); });
+    return;
+  }
+  pendingWrites++;
+  S.api.update('list_entries', entry.id, patch).catch((e) => {
+    if (isNetworkError(e)) { enqueue(entry.id, patch); S.offline = true; render(); cacheSave(); return; }
+    console.warn(e);
+    toast(`Afvinken mislukt: ${e.message}`, { error: true });
+  }).finally(() => { pendingWrites--; scheduleRefresh(150); });
+}
+
+async function waitForId(entry) {
+  for (let i = 0; i < 50 && String(entry.id).startsWith('tmp-'); i++) await new Promise((r) => setTimeout(r, 100));
+  if (String(entry.id).startsWith('tmp-')) throw new Error('artikel nog niet opgeslagen');
+}
+
 // ---------- Weergave ----------
 
 function render() {
@@ -195,6 +341,7 @@ function render() {
   else if (S.membership.member.status !== 'approved') $app.innerHTML = viewWaiting();
   else if (!S.data) $app.innerHTML = '<div class="splash">Laden…</div>';
   else $app.innerHTML = viewMain();
+  syncWakeLock();
 
   if (keepId) {
     const el = document.getElementById(keepId);
@@ -240,7 +387,7 @@ function viewWelcome() {
     <div class="or">of</div>
     <div class="card pad">
       <h2>Meedoen met je gezin</h2>
-      <p class="muted small">Vraag de code aan wie het gezin gestart heeft. Die keurt je aanvraag goed.</p>
+      <p class="muted small">Vraag de code aan een gezinslid. Die keurt je aanvraag goed.</p>
       <label class="lbl" for="join-code">Gezinscode</label>
       <input id="join-code" class="field code" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="ABCD">
       <label class="lbl" for="join-name">Je naam</label>
@@ -258,16 +405,23 @@ function viewWaiting() {
     <h1>Even wachten</h1>
     <p>Hoi ${esc(member.name)}, je aanvraag voor gezin</p>
     <div class="big-code">${esc(family?.code ?? '····')}</div>
-    <p>wacht op goedkeuring door degene die het gezin gestart heeft. Zodra die je goedkeurt, gaat de app vanzelf open.</p>
+    <p>wacht op goedkeuring door een van de gezinsleden. Zodra die je goedkeurt, gaat de app vanzelf open.</p>
     <button class="btn primary block" data-action="reload-data">Opnieuw controleren</button>
     <button class="btn danger block" data-action="cancel-join">Aanvraag intrekken</button>
   </div>`;
 }
 
+function offlineBanner() {
+  const n = queue.length;
+  if (!S.offline && !n) return '';
+  if (!S.offline) return `<div class="banner">${plural(n, 'afgevinkt artikel wordt', 'afgevinkte artikelen worden')} nog verstuurd…</div>`;
+  return `<div class="banner">Geen internet. Afvinken werkt gewoon${n ? ` (${n} nog te versturen)` : ''}; toevoegen en Klaar wachten op verbinding.</div>`;
+}
+
 function topbar(title) {
   return `<header class="topbar"><h1>${esc(title)}</h1>
     <button class="code-chip" data-action="tab" data-tab="beheer" aria-label="Gezinscode">${esc(S.membership.family.code)}</button></header>
-    ${S.offline ? '<div class="banner">Geen verbinding. Je ziet de laatst bekende lijst; wijzigingen lukken pas weer met internet.</div>' : ''}`;
+    ${offlineBanner()}`;
 }
 
 function nav() {
@@ -344,9 +498,10 @@ function viewList() {
       <button class="back-btn" data-action="overview">${ICON.back} Lijstjes</button>
       <span style="flex:1"></span>
       <button class="code-chip" data-action="tab" data-tab="beheer" aria-label="Gezinscode">${esc(S.membership.family.code)}</button></header>
-    ${S.offline ? '<div class="banner">Geen verbinding. Je ziet de laatst bekende lijst; wijzigingen lukken pas weer met internet.</div>' : ''}
+    ${offlineBanner()}
   <div class="content">
     <div class="list-title"><h1>${esc(lst.name)}</h1>
+      <button class="icon-btn" data-action="share-list" aria-label="Lijst delen" title="Lijst delen">${ICON.share}</button>
       <button class="icon-btn" data-action="edit-list" aria-label="Lijst wijzigen">${ICON.pencil}</button></div>
     <div class="list-sub">${plural(entries.length, 'regel', 'regels')}${cart ? ` · ${cart} in kar` : ''}</div>
     ${listChips()}
@@ -470,22 +625,18 @@ function viewShop() {
 function viewManage() {
   const d = S.data;
   const self = me();
-  const iAmStarter = d.members.find((m) => m.user_id === self.user_id)?.is_starter;
-  const starter = d.members.find((m) => m.is_starter);
 
   const members = d.members.map((m) => {
     const isMe = m.user_id === self.user_id;
     const tags = [m.is_starter ? 'starter' : '', isMe ? 'jij' : ''].filter(Boolean).join(' · ');
     if (m.status === 'pending') {
       return `<div class="row"><div class="main"><span class="name">${esc(m.name)}</span><span class="meta">wil meedoen</span></div>
-        ${iAmStarter ? `<button class="btn small primary" data-action="approve" data-id="${m.user_id}">Goedkeuren</button>` : ''}
+        <button class="btn small primary" data-action="approve" data-id="${m.user_id}">Goedkeuren</button>
         <button class="btn small" data-action="remove-member" data-id="${m.user_id}">Weigeren</button></div>`;
     }
     return `<div class="row"><div class="main"><span class="name">${esc(m.name)}</span>${tags ? `<span class="meta">${tags}</span>` : ''}</div>
       ${isMe ? '' : `<button class="icon-btn" data-action="remove-member" data-id="${m.user_id}" aria-label="${esc(m.name)} verwijderen">×</button>`}</div>`;
   }).join('');
-  const waitNote = pendingMembers().length && !iAmStarter && starter
-    ? `<p class="muted small" style="margin:8px 6px">${esc(starter.name)} kan wachtende aanvragen goedkeuren.</p>` : '';
 
   const stores = d.stores.map((s) => {
     const learned = d.positionRows.filter((p) => p.store_id === s.id).length;
@@ -509,7 +660,6 @@ function viewManage() {
       <div class="big-code">${esc(S.membership.family.code)}</div>
     </div>
     <div class="card" style="margin-top:12px">${members}</div>
-    ${waitNote}
     <div class="section-title">Winkels</div>
     <div class="card">${stores || '<div class="row muted">Nog geen winkels</div>'}</div>
     <button class="btn block" style="margin-top:10px" data-action="add-store">+ Winkel toevoegen</button>
@@ -644,7 +794,7 @@ function addToList(item, note = null, qty = 1, listId = S.listId) {
 }
 
 function newItemSheet(name) {
-  const overig = overigCategory();
+  const overig = fallbackCategory();
   openSheet(`<h2>Nieuw artikel</h2>
     <label class="lbl" for="ni-name">Naam</label>
     <input id="ni-name" class="field" value="${esc(name)}" maxlength="80">
@@ -659,13 +809,13 @@ function newItemSheet(name) {
       const nm = $sheet.querySelector('#ni-name').value.trim();
       const note = $sheet.querySelector('#ni-note').value.trim() || null;
       if (!nm) return;
+      const catId = pickedCat();   // uitlezen vóór het sluiten van het venster
       const dup = S.data.items.find((i) => norm(i.name) === norm(nm));
       closeSheet();
       S.search = '';
       if (dup) return addToList(dup, note);
       const listId = S.listId;
       if (!listId) return toast('Kies eerst een lijst', { error: true });
-      const catId = pickedCat();
       const item = { id: tmpId(), family_id: familyId(), name: nm, category_id: catId, use_count: 0, last_used: null };
       const entry = { id: tmpId(), family_id: familyId(), list_id: listId, item_id: item.id, note, qty: 1, in_cart: false, cart_at: null, cart_store_id: null, added_at: nowIso() };
       mutate(() => { S.data.items.push(item); S.data.entries.push(entry); }, async () => {
@@ -737,16 +887,18 @@ function removeEntry(entry) {
 function toCart(entry, rowEl) {
   const it = S.data.itemsById.get(entry.item_id);
   const store = S.storeId;
-  const apply = () => mutate(() => {
+  vibrate();
+  const apply = () => {
     entry.in_cart = true; entry.cart_at = nowIso(); entry.cart_store_id = store;
-  }, () => S.api.update('list_entries', entry.id, { in_cart: true, cart_store_id: store }), 'Afvinken mislukt');
+    cartWrite(entry, { in_cart: true, cart_store_id: store });
+  };
   if (rowEl) { rowEl.classList.add('leaving'); setTimeout(apply, 200); } else apply();
   toast(`${it.name} in de kar`, { undo: () => fromCart(entry) });
 }
 
 function fromCart(entry) {
-  mutate(() => { entry.in_cart = false; entry.cart_at = null; entry.cart_store_id = null; },
-    () => S.api.update('list_entries', entry.id, { in_cart: false }), 'Terugzetten mislukt');
+  entry.in_cart = false; entry.cart_at = null; entry.cart_store_id = null;
+  cartWrite(entry, { in_cart: false });
 }
 
 function cartSheet() {
@@ -772,6 +924,7 @@ function cartSheet() {
 async function finish(fromSheet = false) {
   const cart = cartEntries();
   if (!cart.length) return;
+  if (S.offline || !navigator.onLine) return toast('Klaar lukt pas weer met internet. Je afvinkwerk blijft bewaard.', { error: true });
   const left = listEntries().length;
   const listId = S.listId;
   const multi = S.data.lists.length > 1;
@@ -800,7 +953,10 @@ async function finish(fromSheet = false) {
       if (it) { it.use_count += 1; it.last_used = nowIso(); }
     }
     S.data.entries = S.data.entries.filter((e) => !(e.in_cart && e.list_id === listId));
-  }, () => S.api.finishShopping(listId, storeId, learned), 'Afronden mislukt');
+  }, async () => {
+    if (queue.length && !(await flushQueue())) throw new Error('geen verbinding, probeer het zo opnieuw');
+    await S.api.finishShopping(listId, storeId, learned);
+  }, 'Afronden mislukt');
   toast('Kar geleegd. Tot de volgende keer!');
 }
 
@@ -921,10 +1077,10 @@ async function resetStore(store) {
 async function addCategory() {
   const name = await promptSheet({ title: 'Categorie toevoegen', placeholder: 'Bijv. Dranken', ok: 'Toevoegen' });
   if (!name) return;
-  const overig = overigCategory();
+  const overig = fallbackCategory();
   mutate(null, async () => {
     if (overig) {
-      // nieuwe categorie vóór "Overig" zetten
+      // nieuwe categorie vóór het vangnet zetten
       await S.api.insert('categories', { family_id: familyId(), name, position: overig.position });
       await S.api.update('categories', overig.id, { position: overig.position + 1 });
     } else {
@@ -949,12 +1105,12 @@ function moveCategory(cat, dir) {
 }
 
 async function deleteCategory(cat) {
-  const overig = overigCategory();
+  const overig = fallbackCategory();
   const n = S.data.items.filter((i) => i.category_id === cat.id).length;
   const target = overig && overig.id !== cat.id ? overig : null;
   const ok = await confirmSheet({
     title: `${cat.name} verwijderen?`,
-    text: n ? `${plural(n, 'artikel gaat', 'artikelen gaan')} naar ${target ? '“Overig”' : '“Zonder categorie”'}.` : '',
+    text: n ? `${plural(n, 'artikel gaat', 'artikelen gaan')} naar “${esc(target ? target.name : 'Zonder categorie')}”.` : '',
     ok: 'Verwijderen', danger: true,
   });
   if (!ok) return;
@@ -1053,6 +1209,7 @@ const actions = {
   'open-list': (el) => { openList(el.dataset.id); window.scrollTo(0, 0); },
   'pick-list': (el) => openList(el.dataset.id, { overview: S.overview }),
   'new-list': () => newListSheet(),
+  'share-list': () => shareList(),
   'edit-list': () => { const l = currentList(); if (l) editListSheet(l); },
   'from-cart': (el) => { const e = S.data.entries.find((x) => x.id === el.dataset.id); if (e && e.in_cart) fromCart(e); },
 
@@ -1154,6 +1311,7 @@ async function boot() {
   if (!configured && !demo) { S.api = { mode: 'none' }; $app.innerHTML = viewNotConfigured(); return; }
 
   S.api = demo ? createDemoApi() : createSupabaseApi(SUPABASE_URL, SUPABASE_ANON_KEY);
+  queueLoad();
   // Bij het openen altijd eerst het overzicht van de lijstjes
   S.tab = 'lijst'; S.overview = true;
   if (cacheLoad()) { S.wasMember = true; render(); }
@@ -1161,14 +1319,20 @@ async function boot() {
     await S.api.init();
   } catch (e) {
     console.warn(e);
-    if (S.data) { S.offline = true; render(); return; }
+    if (S.data) {
+      S.offline = true; render();
+      // Opnieuw opstarten zodra er weer verbinding is (wachtrij blijft bewaard)
+      window.addEventListener('online', () => location.reload(), { once: true });
+      return;
+    }
     return renderError('Kan niet verbinden', e);
   }
   S.api.subscribe(() => scheduleRefresh());
   await refresh();
 
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRefresh(50); });
+  document.addEventListener('visibilitychange', () => { syncWakeLock(); if (!document.hidden) scheduleRefresh(50); });
   window.addEventListener('online', () => scheduleRefresh(50));
+  window.addEventListener('offline', () => { S.offline = true; render(); });
   // vangnet als een realtime-bericht gemist is; sneller zolang je op goedkeuring wacht
   setInterval(() => {
     if (document.hidden) return;

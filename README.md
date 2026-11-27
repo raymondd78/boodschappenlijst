@@ -5,8 +5,10 @@ Een gedeelde boodschappenlijst voor het gezin, als webapp op de telefoon (PWA).
 - **Lijst**: snel toevoegen vanuit *vaak gekozen* artikelen of door te typen; sorteren per categorie of in winkelvolgorde. Eén notitie per artikel ("2 stuks", "de grote").
 - **Winkelen**: kies de winkel, tik een artikel aan en het gaat in de kar (met *ongedaan maken*). De kar is te bekijken en artikelen kunnen er weer uit. **Klaar** leegt de kar.
 - **Leert de looproute**: bij *Klaar* onthoudt de app per winkel in welke volgorde je hebt afgevinkt. De volgende keer staat de lijst in die volgorde.
-- **Gedeeld**: de eerste gebruiker start een gezin en krijgt een code van 4 letters. Anderen vragen toegang met die code; de starter keurt goed (badge bij *Beheer*). Wijzigingen verschijnen direct op alle telefoons.
-- **Startdata**: 13 categorieën in de looproute van Lidl Siersteenlaan, 3 Lidl-winkels en 162 artikelen uit 14 kassabonnen (aug–nov 2026), met hoe vaak ze gekocht zijn.
+- **Gedeeld**: de eerste gebruiker start een gezin en krijgt een code van 4 letters. Anderen vragen toegang met die code; elk gezinslid kan goedkeuren (badge bij *Beheer*). Wijzigingen verschijnen direct op alle telefoons.
+- **Zonder internet afvinken**: valt het bereik in de winkel weg, dan werkt afvinken gewoon door; het wordt in volgorde verstuurd zodra er weer verbinding is.
+- **Handig in de winkel**: het scherm blijft aan op *Winkelen* en de telefoon trilt kort bij afvinken. Een lijst deel je als tekst (bijv. via WhatsApp) met het deel-icoon naast de naam.
+- **Startdata**: 10 categorieën (volgorde = startroute, daarna leert de app per winkel), 3 Lidl-winkels en 162 artikelen uit 14 kassabonnen (aug–nov 2026), met hoe vaak ze gekocht zijn.
 
 Techniek: HTML/CSS/JavaScript zonder build-stap, [Supabase](https://supabase.com) als database (gratis plan), anonieme inlog per toestel en Row Level Security voor de afscherming per gezin.
 
@@ -50,7 +52,7 @@ Open de link in Chrome → menu **⋮ → App installeren** (of *Toevoegen aan s
 
 1. Eén persoon kiest **Gezin starten** en vult een naam in. Bovenin staat de gezinscode.
 2. De anderen kiezen **Meedoen met je gezin**, vullen de code en hun naam in.
-3. De starter ziet een badge bij **Beheer** en tikt op **Goedkeuren**.
+3. Een gezinslid ziet een badge bij **Beheer** en tikt op **Goedkeuren**.
 
 ---
 
@@ -59,11 +61,11 @@ Open de link in Chrome → menu **⋮ → App installeren** (of *Toevoegen aan s
 | Scherm | Wat je doet |
 |---|---|
 | **Lijstjes** | De app opent met het overzicht van alle lijsten, met op elke knop het aantal regels (ook wat al in de kar ligt). **Nieuwe lijst** maakt een lijst; de naam is standaard *Boodschappenlijst* en is aan te passen. Bestaat de naam al, dan komt er *(2)* achter. In een lijst wissel je met de knoppen bovenaan van lijst; **‹ Lijstjes** (of nog een keer op *Lijst* tikken) brengt je terug. Het potloodje naast de naam: naam wijzigen of de lijst verwijderen (met bevestiging als er nog iets in staat; er blijft altijd minstens één lijst). Alle lijsten zijn van het hele gezin. |
-| **Lijst** | Typ een deel van de naam en druk op Enter (pakt de beste match), of tik op een suggestie. Bestaat het artikel nog niet, kies dan *+ Nieuw artikel* en een categorie. Met **−** en **+** pas je het aantal aan; nog een tik op een vaak gekozen artikel telt er één bij. **−** bij aantal 1 (prullenbakje) haalt het van de lijst. Tik op de naam voor notitie en categorie. Wat al in de kar ligt blijft op de lijst staan, doorgestreept met een vinkje; **Terug** zet het weer op de lijst. |
-| **Winkelen** | Kies (bij meer lijsten) de lijst en de winkel. Bij 2 of meer staat het aantal (bijv. **3×**) achter de naam. Tik een artikel aan → het hele aantal gaat in de kar. *Kar* toont wat je al hebt (↩ zet terug). *Klaar* leegt de kar van die lijst en onthoudt de volgorde. |
+| **Lijst** | Het deel-icoon naast de naam deelt de lijst als tekst (zonder wat al in de kar ligt). Typ een deel van de naam en druk op Enter (pakt de beste match), of tik op een suggestie. Bestaat het artikel nog niet, kies dan *+ Nieuw artikel* en een categorie. Met **−** en **+** pas je het aantal aan; nog een tik op een vaak gekozen artikel telt er één bij. **−** bij aantal 1 (prullenbakje) haalt het van de lijst. Tik op de naam voor notitie en categorie. Wat al in de kar ligt blijft op de lijst staan, doorgestreept met een vinkje; **Terug** zet het weer op de lijst. |
+| **Winkelen** | Het scherm blijft aan zolang je hier bent. Kies (bij meer lijsten) de lijst en de winkel. Bij 2 of meer staat het aantal (bijv. **3×**) achter de naam. Tik een artikel aan → het hele aantal gaat in de kar. *Kar* toont wat je al hebt (↩ zet terug). *Klaar* leegt de kar van die lijst en onthoudt de volgorde. |
 | **Beheer** | Gezinscode en leden (goedkeuren, weigeren, verwijderen), winkels (toevoegen, hernoemen, geleerde volgorde wissen ↺), categorieën (volgorde = standaardroute, ↑↓), artikelen zoeken en wijzigen. |
 
-Iedereen in het gezin mag leden verwijderen en winkels/categorieën/artikelen beheren; alleen de starter keurt nieuwe leden goed. Vertrekt de starter, dan gaat die rol naar het langst aanwezige lid.
+Iedereen in het gezin mag leden verwijderen en winkels/categorieën/artikelen beheren; en ook nieuwe leden goedkeuren. Vertrekt de starter, dan gaat die rol naar het langst aanwezige lid.
 
 ### Zo leert de app de looproute
 
@@ -80,9 +82,9 @@ Is `js/config.js` nog leeg, dan biedt de app een demo aan. Alles werkt dan, maar
 
 ---
 
-## Bekende beperkingen (versie 1.0)
+## Bekende beperkingen
 
-- **Zonder internet**: de laatst bekende lijst blijft zichtbaar, maar afvinken en toevoegen lukken pas weer met verbinding.
+- **Zonder internet**: de laatst bekende lijst blijft zichtbaar en afvinken werkt; toevoegen, wijzigen en *Klaar* lukken pas weer met verbinding.
 - **Toestel = account**: wie de app-gegevens van de browser wist of een andere browser gebruikt, moet opnieuw meedoen met de code (en opnieuw goedgekeurd worden).
 - **Geen pushmeldingen**: wachtende leden zie je aan de badge in de app.
 
@@ -96,6 +98,8 @@ Nieuwe installaties gebruiken gewoon `supabase/setup.sql`. Heb je de database al
 |---|---|---|
 | 1.1 | `2026-11-27_aantal.sql` | Aantal per artikel op de lijst |
 | 1.2 | `2026-11-27_lijstjes.sql` | Meerdere lijstjes; de bestaande lijst wordt *Boodschappenlijst* |
+| 1.3 | `2026-11-27_goedkeuren.sql` | Elk gezinslid mag nieuwe leden goedkeuren |
+| 1.3 | `2026-11-27_categorieen.sql` | 10 nieuwe categorieën; bestaande artikelen worden omgezet, eigen categorieën blijven. **Let op:** de geleerde winkelvolgorde wordt gewist (die hoorde bij de oude indeling). |
 
 ### App
 

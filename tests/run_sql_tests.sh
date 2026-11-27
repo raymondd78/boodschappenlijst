@@ -19,3 +19,11 @@ createdb "$DB2"
 psql -q -v ON_ERROR_STOP=1 -d "$DB2" -f tests/supabase_mock.sql
 psql -q -v ON_ERROR_STOP=1 -d "$DB2" -f tests/setup_v1.1.sql
 psql -q -v ON_ERROR_STOP=1 -d "$DB2" -f tests/test_migratie.sql
+
+# Migratie naar de 10 categorieën (versie 1.3)
+DB3=boodschappen_migratie_cat
+dropdb --if-exists "$DB3"
+createdb "$DB3"
+psql -q -v ON_ERROR_STOP=1 -d "$DB3" -f tests/supabase_mock.sql
+psql -q -v ON_ERROR_STOP=1 -d "$DB3" -f tests/setup_v1.1.sql
+psql -q -v ON_ERROR_STOP=1 -d "$DB3" -f tests/test_migratie_categorieen.sql

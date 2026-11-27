@@ -16,17 +16,26 @@ page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(m.type() + ': ' + m.text()); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const shot = async (n) => { await sleep(350); await page.screenshot({ path: out + n + '.png' }); };
-const click = async (sel) => { await page.waitForSelector(sel, { timeout: 3000 }); await page.click(sel); await sleep(150); };
+// klikken via het element zelf: de vaste navigatiebalk kan anders over de knop vallen
+const click = async (sel) => { await page.waitForSelector(sel, { timeout: 3000 }); await page.$eval(sel, (e) => e.click()); await sleep(150); };
 const text = (sel) => page.$eval(sel, (e) => e.innerText);
 const assert = (c, m) => { if (!c) { console.log('FAIL', m); process.exitCode = 1; } else console.log('ok ', m); };
 
-// 1. Niet geconfigureerd
-await page.goto(BASE, { waitUntil: 'networkidle0' });
+// Telefoonfuncties nabootsen: delen, trillen, scherm aan
+await page.evaluateOnNewDocument(() => {
+  window.__shared = []; window.__vibrations = 0; window.__wake = { requests: 0, active: false };
+  navigator.share = async (d) => { window.__shared.push(d); };
+  navigator.vibrate = () => { window.__vibrations++; return true; };
+  Object.defineProperty(navigator, 'wakeLock', { value: { request: async () => {
+    window.__wake.requests++; window.__wake.active = true;
+    const l = new EventTarget(); l.release = async () => { window.__wake.active = false; l.dispatchEvent(new Event('release')); }; return l;
+  } } });
+});
+
+// 1. Demomodus (js/config.js is gekoppeld aan Supabase, dus ?demo gebruiken)
+await page.goto(BASE + '?demo', { waitUntil: 'networkidle0' });
 await page.evaluate(() => localStorage.clear());
-await page.goto(BASE, { waitUntil: 'networkidle0' });
-assert((await text('#app')).includes('Nog niet gekoppeld'), 'scherm "nog niet gekoppeld"');
-await shot('01-niet-gekoppeld');
-await click('[data-action="start-demo"]');
+await page.goto(BASE + '?demo', { waitUntil: 'networkidle0' });
 await page.waitForSelector('#new-name');
 await shot('02-welkom');
 
@@ -68,14 +77,15 @@ await sleep(500);
 await click('[data-action="new-item"]');
 await page.waitForSelector('#ni-name');
 await shot('05-nieuw-artikel');
-// categorie Schoonmaak kiezen
+// vangnetcategorie kiezen
 const chips = await page.$$('#cat-chips .chip');
-for (const c of chips) if ((await c.evaluate((e) => e.textContent)) === 'Schoonmaak') await c.click();
+for (const c of chips) if ((await c.evaluate((e) => e.textContent)) === 'Drogisterij & huishouden') await c.evaluate((e) => e.click());
 await page.type('#ni-note', '2 stuks');
 await click('[data-action="save"]');
 await sleep(300);
 const listText = await text('.content');
 assert(listText.includes('Wc-reiniger') && listText.includes('2 stuks'), 'nieuw artikel met notitie op lijst');
+assert(/Drogisterij & huishouden\s+Wc-reiniger/.test(listText), 'nieuw artikel in gekozen categorie');
 assert(/5 regels/i.test(listText), '5 regels (kwark stond er al → aantal 3)');
 await shot('06-lijst-categorie');
 
@@ -91,7 +101,7 @@ await shot('06b-aantal');
 
 // 4. Notitie wijzigen
 const rows = await page.$$('[data-action="edit-entry"]');
-await rows[0].click();
+await rows[0].evaluate((e) => e.click());
 await page.waitForSelector('#ee-note');
 await page.type('#ee-note', 'grote');
 await shot('07-artikel-bewerken');
@@ -243,6 +253,56 @@ await click('[data-action="edit-list"]');
 await click('.sheet [data-action="delete"]');
 await sleep(300);
 assert((await text('#toast-root')).includes('minstens één lijst'), 'laatste lijst kan niet weg');
+
+// 8c. Versie 1.3: delen, trillen, scherm aan, afvinken zonder internet
+await click('[data-action="share-list"]');
+await sleep(200);
+const shared = await page.evaluate(() => window.__shared[0]);
+assert(shared && shared.title === 'Boodschappenlijst' && shared.text.includes('- Bananen'), 'lijst gedeeld als tekst');
+assert(shared.text.split('\n').filter((l) => l.startsWith('- ')).length === 5, 'alle 5 regels gedeeld (winkelvolgorde)');
+await click('[data-action="qty-up"]');
+await click('[data-action="sort"][data-mode="categorie"]');
+await click('[data-action="share-list"]');
+await sleep(200);
+const shared2 = await page.evaluate(() => window.__shared[1]);
+assert(/\(2×\)/.test(shared2.text) && shared2.text.includes('Groente & fruit\n- Bananen'), 'gedeelde tekst met aantal en categorie');
+console.log('   gedeelde tekst:\n' + shared2.text.split('\n').map((l) => '     ' + l).join('\n'));
+await click('.nav [data-tab="winkelen"]');
+await sleep(200);
+assert(await page.evaluate(() => window.__wake.active), 'scherm blijft aan in Winkelen');
+const v0 = await page.evaluate(() => window.__vibrations);
+// zonder internet afvinken
+await page.setOfflineMode(true);
+await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+await sleep(200);
+assert((await text('.banner')).includes('Afvinken werkt gewoon'), 'melding: geen verbinding, afvinken werkt');
+const offOrder = await page.$$eval('.shop .row .name', (els) => els.map((e) => e.textContent));
+await click('.shop [data-action="to-cart"]');
+await sleep(450);
+await click('.shop [data-action="to-cart"]');
+await sleep(450);
+assert((await page.evaluate(() => window.__vibrations)) - v0 === 2, 'trilling bij elk afvinken');
+assert((await text('.banner')).includes('2 nog te versturen'), 'wachtrij telt 2');
+assert((await text('.progress')).includes('In de kar 2'), 'afgevinkt zonder internet');
+await shot('21-offline-afvinken');
+await click('[data-action="finish"]');
+await sleep(200);
+assert((await text('#toast-root')).includes('pas weer met internet'), 'Klaar wacht op internet');
+// herladen zonder internet: wachtrij en kar blijven
+const queued = await page.evaluate(() => JSON.parse(localStorage.getItem('bl-queue-demo')).length);
+assert(queued === 2, 'wachtrij opgeslagen op het toestel');
+await page.setOfflineMode(false);
+await page.evaluate(() => window.dispatchEvent(new Event('online')));
+await sleep(800);
+assert(!(await page.$('.banner')), 'melding weg na verbinding');
+assert((await page.evaluate(() => JSON.parse(localStorage.getItem('bl-queue-demo')).length)) === 0, 'wachtrij verstuurd');
+const db = await page.evaluate(() => JSON.parse(localStorage.getItem('bl-demo-db')));
+const inCart = db.list_entries.filter((e) => e.in_cart).map((e) => db.items.find((i) => i.id === e.item_id).name);
+assert(inCart.length === 2 && inCart.includes(offOrder[0]) && inCart.includes(offOrder[1]), 'afgevinkte artikelen opgeslagen');
+assert((await text('.progress')).includes('In de kar 2'), 'kar klopt na versturen');
+await click('.nav [data-tab="lijst"]');
+await sleep(200);
+assert(!(await page.evaluate(() => window.__wake.active)), 'scherm-aan los bij verlaten Winkelen');
 
 // 9. Herladen: data blijft (cache + demo-opslag)
 await page.reload({ waitUntil: 'networkidle0' });
